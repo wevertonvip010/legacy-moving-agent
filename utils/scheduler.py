@@ -196,6 +196,38 @@ def job_verificar_tarefas_vencidas(profiles_manager, evolution_client, legacy_ap
 # INICIALIZAÇÃO DO SCHEDULER
 # ──────────────────────────────────────────
 
+
+
+def job_relatorio_proativo(profiles_manager, evolution_client, legacy_api):
+    """Job: envia relatorio proativo com alertas e insights para admin/supervisor."""
+    from agent.analytics import gerar_relatorio_proativo
+    from agent.notifications import TipoNotificacao, dispatch_notification
+    import asyncio
+
+    logger.info("[Scheduler] Executando job_relatorio_proativo")
+    try:
+        relatorio = gerar_relatorio_proativo(legacy_api)
+
+        # Verificar se ha alertas antes de enviar
+        if "[!]" not in relatorio and "Sem alertas" in relatorio:
+            logger.info("[Scheduler] Nenhum alerta critico — relatorio proativo nao enviado")
+            return
+
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(
+            dispatch_notification(
+                tipo=TipoNotificacao.RESUMO_DIARIO,
+                message=relatorio,
+                profiles_manager=profiles_manager,
+                evolution_client=evolution_client,
+            )
+        )
+        loop.close()
+        logger.info(f"[Scheduler] Relatorio proativo enviado: {result}")
+    except Exception as e:
+        logger.error(f"[Scheduler] Erro no job_relatorio_proativo: {e}")
+
+
 def start_scheduler(profiles_manager, evolution_client, legacy_api):
     """Inicia o scheduler com todos os jobs configurados."""
     scheduler = get_scheduler()
@@ -261,7 +293,23 @@ def start_scheduler(profiles_manager, evolution_client, legacy_api):
         },
     )
 
-    scheduler.start()
+
+    # ── Relatorio proativo Fase 3 (todo dia 30min depois do resumo) ──
+    scheduler.add_job(
+        job_relatorio_proativo,
+        trigger="cron",
+        hour=RESUMO_HORA,
+        minute=(RESUMO_MINUTO + 30) % 60,
+        id="relatorio_proativo",
+        replace_existing=True,
+        kwargs={
+            "profiles_manager": profiles_manager,
+            "evolution_client": evolution_client,
+            "legacy_api": legacy_api,
+        },
+    )
+
+        scheduler.start()
     logger.info(
         f"[Scheduler] Iniciado com {len(scheduler.get_jobs())} jobs | "
         f"Resumo diário às {RESUMO_HORA:02d}:{RESUMO_MINUTO:02d}"
