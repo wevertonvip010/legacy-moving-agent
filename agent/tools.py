@@ -3,6 +3,8 @@ agent/tools.py
 Definicao e execucao de todas as ferramentas do agente Legacy Moving.
 Cada ferramenta mapeia para um endpoint da API do ERP.
 Fase 2: Adicionadas ferramentas de agenda (Google Calendar) e notificacoes.
+Fase 3: Drive inteligente + Analytics proativo.
+Fase 4: Preferencias e contexto individual por usuario.
 """
 import logging
 from datetime import datetime
@@ -262,7 +264,78 @@ TOOLS = [
 },
 "required": ["mensagem"]
 }
+},,
+{
+"name": "drive_salvar_arquivo",
+"description": "Salva um arquivo (imagem, documento, comprovante) no Google Drive. Use quando o usuario enviar uma midia e quiser arquivar, ou quando quiser salvar um documento de uma OS.",
+"input_schema": {
+"type": "object",
+"properties": {
+"url": {"type": "string", "description": "URL do arquivo a salvar"},
+"nome": {"type": "string", "description": "Nome do arquivo (ex: comprovante_os123.jpg)"},
+"categoria": {"type": "string", "description": "Categoria: avarias|contratos|comprovantes|fotos_os|orcamentos|relatorios|outros"},
+"descricao": {"type": "string", "description": "Descricao do arquivo"},
+"os_id": {"type": "integer", "description": "ID da OS relacionada (opcional)"}
 },
+"required": ["url", "nome"]
+}
+},
+{
+"name": "drive_buscar_arquivos",
+"description": "Busca arquivos salvos no Google Drive por descricao, categoria ou OS. Use quando o usuario perguntar por documentos, fotos ou arquivos de uma OS ou cliente.",
+"input_schema": {
+"type": "object",
+"properties": {
+"query": {"type": "string", "description": "Texto para buscar no nome ou descricao"},
+"categoria": {"type": "string", "description": "Filtrar por categoria: avarias|contratos|comprovantes|fotos_os|orcamentos|relatorios|outros"},
+"os_id": {"type": "integer", "description": "Filtrar por OS especifica"}
+},
+"required": []
+}
+},
+{
+"name": "drive_listar_arquivos_os",
+"description": "Lista todos os arquivos (fotos, documentos) de uma OS especifica no Drive.",
+"input_schema": {
+"type": "object",
+"properties": {
+"os_id": {"type": "integer", "description": "ID da OS"}
+},
+"required": ["os_id"]
+}
+},
+{
+"name": "gerar_analise_proativa",
+"description": "Gera um relatorio proativo com alertas e insights sobre financeiro, operacional, estoque e leads. Use quando o admin pedir uma analise geral ou diagnostico do negocio.",
+"input_schema": {
+"type": "object",
+"properties": {
+"modulo": {"type": "string", "description": "Modulo especifico: financeiro|operacional|estoque|leads|geral (padrao: geral)"}
+},
+"required": []
+}
+},
+{
+"name": "configurar_preferencias",
+"description": "Configura as preferencias do usuario: quais notificacoes receber, modo verboso, etc. Use quando o usuario quiser personalizar o comportamento do agente.",
+"input_schema": {
+"type": "object",
+"properties": {
+"preferencia": {"type": "string", "description": "Nome da preferencia: resumo_diario|alertas_financeiros|alertas_operacionais|alertas_estoque|alertas_leads|modo_verboso"},
+"valor": {"type": "boolean", "description": "true para ativar, false para desativar"}
+},
+"required": ["preferencia", "valor"]
+}
+},
+{
+"name": "consultar_meu_contexto",
+"description": "Mostra o contexto atual do usuario: preferencias configuradas, ultima OS vista, historico de acoes recentes. Use quando o usuario perguntar sobre suas configuracoes.",
+"input_schema": {
+"type": "object",
+"properties": {},
+"required": []
+}
+}
 ]
 
 # ── MAPEAMENTO CARGO → FERRAMENTAS PERMITIDAS ──────────────────────────────
@@ -277,6 +350,8 @@ TOOLS_POR_ROLE = {
 "consultar_boxes_guarda_moveis", "criar_tarefa", "consultar_tarefas",
 "agenda_listar_eventos", "agenda_criar_evento", "agenda_criar_evento_os",
 "notificar_equipe",
+"drive_salvar_arquivo", "drive_buscar_arquivos", "drive_listar_arquivos_os",
+"gerar_analise_proativa", "configurar_preferencias", "consultar_meu_contexto",
 ],
 "motorista": [
 "consultar_os_do_dia", "consultar_programacao_semana",
@@ -333,6 +408,12 @@ def execute_tool(tool_name: str, tool_input: dict, user_context: dict = None) ->
         "agenda_criar_evento": _agenda_criar_evento,
         "agenda_criar_evento_os": _agenda_criar_evento_os,
         "notificar_equipe": _notificar_equipe,
+        "drive_salvar_arquivo": _drive_salvar_arquivo,
+        "drive_buscar_arquivos": _drive_buscar_arquivos,
+        "drive_listar_arquivos_os": _drive_listar_arquivos_os,
+        "gerar_analise_proativa": _gerar_analise_proativa,
+        "configurar_preferencias": _configurar_preferencias,
+        "consultar_meu_contexto": _consultar_meu_contexto,
     }
 
     handler = handlers.get(tool_name)
@@ -673,3 +754,149 @@ def _notificar_equipe(inp: dict, ctx: dict) -> str:
     except Exception as e:
         logger.error(f"Erro notificar_equipe: {e}")
         return f"Erro ao notificar equipe: {e}"
+
+
+# ── FASE 3: GOOGLE DRIVE ─────────────────────────────────────────────────────
+
+def _drive_salvar_arquivo(inp: dict, ctx: dict) -> str:
+    try:
+        from integrations.google_drive import upload_from_url, is_available
+        if not is_available():
+            return "Google Drive nao configurado."
+        result = upload_from_url(
+            url=inp["url"],
+            filename=inp["nome"],
+            categoria=inp.get("categoria", "outros"),
+            descricao=inp.get("descricao", ""),
+            os_id=inp.get("os_id"),
+        )
+        if "erro" in result:
+            return f"Erro ao salvar arquivo: {result['erro']}"
+        return f"Arquivo salvo no Drive!\nNome: {result['nome']}\nURL: {result['url']}"
+    except Exception as e:
+        logger.error(f"Erro drive_salvar_arquivo: {e}")
+        return f"Erro ao salvar no Drive: {e}"
+
+
+def _drive_buscar_arquivos(inp: dict, ctx: dict) -> str:
+    try:
+        from integrations.google_drive import buscar_arquivos, formatar_arquivos_whatsapp, is_available
+        if not is_available():
+            return "Google Drive nao configurado."
+        arquivos = buscar_arquivos(
+            query_texto=inp.get("query", ""),
+            categoria=inp.get("categoria"),
+            os_id=inp.get("os_id"),
+        )
+        return formatar_arquivos_whatsapp(arquivos, titulo="Arquivos encontrados")
+    except Exception as e:
+        logger.error(f"Erro drive_buscar_arquivos: {e}")
+        return f"Erro ao buscar no Drive: {e}"
+
+
+def _drive_listar_arquivos_os(inp: dict, ctx: dict) -> str:
+    try:
+        from integrations.google_drive import listar_arquivos_os, formatar_arquivos_whatsapp, is_available
+        if not is_available():
+            return "Google Drive nao configurado."
+        arquivos = listar_arquivos_os(os_id=inp["os_id"])
+        return formatar_arquivos_whatsapp(arquivos, titulo=f"Arquivos da OS #{inp['os_id']}")
+    except Exception as e:
+        logger.error(f"Erro drive_listar_arquivos_os: {e}")
+        return f"Erro ao listar arquivos OS: {e}"
+
+
+# ── FASE 3: ANALYTICS PROATIVO ───────────────────────────────────────────────
+
+def _gerar_analise_proativa(inp: dict, ctx: dict) -> str:
+    try:
+        from agent.analytics import (
+            gerar_relatorio_proativo,
+            gerar_insight_financeiro_texto,
+            analisar_operacional,
+            analisar_estoque,
+            analisar_leads,
+        )
+        modulo = inp.get("modulo", "geral")
+        if modulo == "financeiro":
+            return gerar_insight_financeiro_texto(api)
+        elif modulo == "operacional":
+            dados = analisar_operacional(api)
+            if dados.get("erro"):
+                return f"Erro: {dados['erro']}"
+            alertas = dados.get("alertas", [])
+            insights = dados.get("insights", [])
+            linhas = ["*Analise Operacional*", ""]
+            linhas += [f"[!] {a}" for a in alertas]
+            linhas += [f"-> {i}" for i in insights]
+            return "\n".join(linhas) if linhas else "_Sem dados operacionais._"
+        elif modulo == "estoque":
+            dados = analisar_estoque(api)
+            alertas = dados.get("alertas", [])
+            return "\n".join(alertas) if alertas else "_Estoque em nivel normal._"
+        elif modulo == "leads":
+            dados = analisar_leads(api)
+            linhas = dados.get("alertas", []) + dados.get("insights", [])
+            return "\n".join(linhas) if linhas else "_Sem alertas de leads._"
+        else:
+            return gerar_relatorio_proativo(api)
+    except Exception as e:
+        logger.error(f"Erro gerar_analise_proativa: {e}")
+        return f"Erro ao gerar analise: {e}"
+
+
+# ── FASE 4: PREFERENCIAS E CONTEXTO DO USUARIO ───────────────────────────────
+
+def _configurar_preferencias(inp: dict, ctx: dict) -> str:
+    try:
+        from agent.user_context import user_context_manager
+        phone = ctx.get("phone", "")
+        role = ctx.get("role", "operacional")
+        preferencia = inp["preferencia"]
+        valor = inp["valor"]
+        user_context_manager.set_preferencia(phone, preferencia, valor, role)
+        status = "ativado" if valor else "desativado"
+        labels = {
+            "resumo_diario": "Resumo diario",
+            "alertas_financeiros": "Alertas financeiros",
+            "alertas_operacionais": "Alertas operacionais",
+            "alertas_estoque": "Alertas de estoque",
+            "alertas_leads": "Alertas de leads",
+            "modo_verboso": "Modo verboso",
+        }
+        label = labels.get(preferencia, preferencia)
+        return f"Preferencia atualizada: *{label}* {status}."
+    except Exception as e:
+        logger.error(f"Erro configurar_preferencias: {e}")
+        return f"Erro ao configurar preferencias: {e}"
+
+
+def _consultar_meu_contexto(inp: dict, ctx: dict) -> str:
+    try:
+        from agent.user_context import user_context_manager
+        phone = ctx.get("phone", "")
+        role = ctx.get("role", "operacional")
+        prefs = user_context_manager.get_preferencias(phone, role)
+        historico = user_context_manager.get_historico_acoes(phone, limite=5, role=role)
+        estado = user_context_manager.get_estado(phone, role)
+
+        linhas = ["*Seu Contexto Atual*", ""]
+
+        linhas.append("*Preferencias:*")
+        for k, v in prefs.items():
+            status = "ativado" if v else "desativado"
+            linhas.append(f"  - {k}: {status}")
+
+        if estado.get("os_em_foco"):
+            linhas.append(f"\nOS em foco: #{estado['os_em_foco']}")
+
+        if historico:
+            linhas.append("\n*Ultimas acoes:*")
+            for h in historico:
+                ts = h.get("ts", "")[:16].replace("T", " ")
+                linhas.append(f"  - {h['acao']} ({ts})")
+
+        return "\n".join(linhas)
+    except Exception as e:
+        logger.error(f"Erro consultar_meu_contexto: {e}")
+        return f"Erro ao consultar contexto: {e}"
