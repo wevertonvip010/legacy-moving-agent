@@ -11,6 +11,7 @@ from agent.prompts import build_system_prompt
 from agent.memory import ConversationMemory
 from agent.profiles import profile_manager, ROLE_PERMISSIONS
 from agent.vision import analisar_imagem, TIPO_PARA_CATEGORIA
+from agent.user_context import user_context_manager
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,9 @@ def process_message(phone: str, message: str, message_type: str = 'text', media_
       # Registrar acesso
       profile_manager.registrar_acesso(phone)
 
+    # Registrar acao no contexto individual
+    user_context_manager._get_or_create(phone, role)
+
     # Processar imagem se recebida
       if message_type == 'image' and media_url:
                 return _processar_imagem(phone, media_url, perfil)
@@ -64,9 +68,13 @@ def process_message(phone: str, message: str, message_type: str = 'text', media_
 
     # Montar system prompt personalizado
     system = build_system_prompt(perfil)
+    # Enriquecer prompt com contexto individual do usuario (Fase 4)
+    ctx_extra = user_context_manager.get_contexto_para_prompt(phone, role)
+    if ctx_extra:
+        system = system + "\n\n" + ctx_extra
 
     # Chamar Claude com tool use
-    response = _call_claude_with_tools(phone, history, system, tools_permitidas)
+    response = _call_claude_with_tools(phone, history, system, tools_permitidas, user_context={"phone": phone, "role": role, "nome": nome})
 
     # Salvar historico
     memory.save_history(phone, history)
@@ -187,7 +195,7 @@ def _verificar_comando_admin(phone: str, message: str) -> str | None:
     return None
 
 
-def _call_claude_with_tools(phone: str, history: list, system: str, tools: list) -> str:
+def _call_claude_with_tools(phone: str, history: list, system: str, tools: list, user_context: dict = None) -> str:
       """
           Chama Claude com suporte a ferramentas filtradas pelo role do usuario.
               """
