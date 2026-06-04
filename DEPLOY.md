@@ -231,3 +231,96 @@ O Railway redeploya automaticamente quando você faz push para o branch `main`.
 ---
 
 *Dúvidas? Abra uma issue no repositório.*
+
+
+---
+
+## Fase 3 — Google Drive (opcional)
+
+### Criar Service Account
+
+1. Acesse [Google Cloud Console](https://console.cloud.google.com)
+2. Crie um projeto ou selecione um existente
+3. Ative a **Google Drive API**: APIs e Servicos > Biblioteca > "Google Drive API"
+4. Crie credenciais: APIs e Servicos > Credenciais > Criar credencial > Conta de Servico
+5. Baixe o JSON da conta de servico
+6. Compartilhe a pasta do Drive com o email da conta de servico (ex: agente@projeto.iam.gserviceaccount.com)
+
+### Variaveis Railway
+
+```
+DRIVE_ROOT_FOLDER_ID=1ABC...xyz    # ID da pasta raiz (copie da URL do Drive)
+GOOGLE_CREDENTIALS_JSON={"type":"service_account","project_id":"..."}
+```
+
+> O campo GOOGLE_CREDENTIALS_JSON deve ser o conteudo completo do arquivo JSON em uma unica linha.
+
+---
+
+## Fase 4 — Contexto Individual de Usuario
+
+Nao requer configuracao externa. O contexto e armazenado em arquivo JSON local.
+
+### Variavel Railway
+
+```
+USER_CONTEXT_FILE=/tmp/user_contexts.json
+```
+
+> Atencao: /tmp/ e efemero no Railway. Para persistencia, use um volume ou banco de dados externo.
+
+---
+
+## Rotas de Administracao (admin.py)
+
+Todas as rotas abaixo requerem o header `X-Admin-Token: <AGENT_SECRET>`.
+
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| GET | /admin/usuarios | Lista usuarios cadastrados |
+| POST | /admin/usuarios | Cadastra usuario |
+| PUT | /admin/usuarios/:phone | Atualiza usuario |
+| DELETE | /admin/usuarios/:phone | Remove usuario |
+| GET | /admin/contextos | Lista contextos de todos usuarios |
+| DELETE | /admin/contextos/:phone | Limpa contexto de usuario |
+| GET | /admin/analytics | Retorna analytics proativos |
+| POST | /admin/relatorio-proativo | Dispara relatorio agora |
+| GET | /admin/drive/arquivos | Lista arquivos no Drive |
+| POST | /admin/drive/upload | Upload de arquivo por URL |
+| POST | /admin/mensagem | Envia mensagem direta |
+| DELETE | /admin/memoria/:phone | Limpa historico de usuario |
+| DELETE | /admin/memoria | Limpa toda a memoria |
+| GET | /admin/jobs | Lista jobs agendados |
+| POST | /admin/jobs/resumo-diario | Dispara resumo diario agora |
+
+### Exemplo de uso (curl)
+
+```bash
+# Cadastrar usuario
+curl -X POST https://seu-agente.railway.app/admin/usuarios \\
+  -H "X-Admin-Token: sua-senha-secreta" \\
+  -H "Content-Type: application/json" \\
+  -d '{"phone":"5511999998888","nome":"Joao","role":"motorista"}'
+
+# Disparar relatorio proativo
+curl -X POST https://seu-agente.railway.app/admin/relatorio-proativo \\
+  -H "X-Admin-Token: sua-senha-secreta"
+
+# Listar arquivos no Drive
+curl https://seu-agente.railway.app/admin/drive/arquivos \\
+  -H "X-Admin-Token: sua-senha-secreta"
+```
+
+---
+
+## Checklist Final v4.0
+
+- [ ] Evolution API rodando e conectada ao WhatsApp
+- [ ] Variaveis de ambiente configuradas no Railway
+- [ ] Webhook configurado na Evolution API
+- [ ] Primeiro usuario admin cadastrado
+- [ ] Google Calendar habilitado (opcional)
+- [ ] Google Drive habilitado (opcional, Fase 3)
+- [ ] Testar /health e /status
+- [ ] Enviar mensagem de teste pelo WhatsApp
+- [ ] Verificar relatorio diario as 7h
