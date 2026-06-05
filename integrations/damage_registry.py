@@ -164,38 +164,49 @@ class DamageRegistry:
                            funcionario_nome: str) -> dict:
         """
         Salva a foto de avaria no Google Drive na pasta correta.
+        Usa google_drive.upload_from_bytes() com categoria='avarias'.
 
-        Estrutura de pastas:
-          Legacy Moving Agent/
-            Clientes/
-              {nome_cliente} — OS {numero_os}/
-                Avarias/
-                  avaria_{timestamp}_{descricao_curta}.jpg
+        Estrutura de pastas resultante (dentro da raiz do Drive):
+          Avarias/
+            avaria_{timestamp}_{descricao_curta}.jpg
+        Tags e descrição vinculam à OS/cliente.
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         descricao_curta = descricao[:30].replace(" ", "_").replace("/", "-")
         nome_arquivo = f"avaria_{timestamp}_{descricao_curta}.jpg"
 
-        # Construir caminho de pasta no Drive
-        pasta_cliente = f"{nome_cliente} — OS {numero_os}" if nome_cliente else f"OS_{numero_os}"
-        caminho = f"Clientes/{pasta_cliente}/Avarias"
-
-        # Metadados do arquivo
         descricao_drive = (
-            f"Avaria registrada por {funcionario_nome}\n"
-            f"OS: {numero_os}\n"
-            f"Item: {descricao}\n"
-            f"Registrado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
-            f"INTERNO — Não compartilhar com cliente"
+            f"Avaria registrada por {funcionario_nome} | "
+            f"OS: {numero_os} | "
+            f"Cliente: {nome_cliente or 'N/A'} | "
+            f"Item: {descricao} | "
+            f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')} | "
+            f"INTERNO"
         )
 
-        return self.drive.upload_file(
-            file_content=image_bytes,
-            filename=nome_arquivo,
-            folder_path=caminho,
-            description=descricao_drive,
-            mimetype="image/jpeg"
-        )
+        # google_drive.py expõe upload_from_bytes(filename, content_bytes, mime_type, categoria, descricao, os_id, tags)
+        from integrations import google_drive as gd_module
+        if gd_module and hasattr(gd_module, 'upload_from_bytes'):
+            return gd_module.upload_from_bytes(
+                filename=nome_arquivo,
+                content_bytes=image_bytes,
+                mime_type="image/jpeg",
+                categoria="avarias",
+                descricao=descricao_drive,
+                tags=[f"OS:{numero_os}", f"cliente:{nome_cliente}", "avaria", "interno"]
+            )
+
+        # Fallback: tenta método upload_file se existir (compatibilidade)
+        if hasattr(self.drive, 'upload_file'):
+            return self.drive.upload_file(
+                file_content=image_bytes,
+                filename=nome_arquivo,
+                folder_path="Avarias",
+                description=descricao_drive,
+                mimetype="image/jpeg"
+            )
+
+        raise AttributeError("google_drive não tem upload_from_bytes nem upload_file")
 
     def _formatar_observacao_erp(self, descricao: str, funcionario_nome: str, drive_url: Optional[str]) -> str:
         """Formata o texto de observação para registrar no ERP."""
