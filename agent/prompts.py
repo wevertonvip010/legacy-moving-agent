@@ -10,6 +10,9 @@ from datetime import datetime
 import os
 
 TIMEZONE = os.getenv("CALENDAR_TIMEZONE", "America/Sao_Paulo")
+COMPANY_NAME    = os.getenv("COMPANY_NAME",    "Legacy Moving")
+COMPANY_EMAIL   = os.getenv("COMPANY_EMAIL",   "legacymovingbr@gmail.com")
+COMPANY_WHATSAPP= os.getenv("COMPANY_WHATSAPP","")
 
 
 def build_system_prompt(perfil: dict) -> str:
@@ -43,6 +46,7 @@ def _get_role_context(role: str, nome: str) -> str:
     admin_ctx = ("\nPERFIL: ADMINISTRADOR\n"
         "Acesso TOTAL. Comandos especiais:\n"
         "  cadastrar 5511999... Joao supervisor\n"
+        "  contato: legacymovingbr@gmail.com\n"
         "  listar usuarios\n"
         "  remover [numero]\n"
         "  analise geral | analise financeira | analise operacional\n"
@@ -65,7 +69,8 @@ def _get_role_context(role: str, nome: str) -> str:
     comercial_ctx = (f"\nPERFIL: COMERCIAL\n"
         f"{nome}: leads, clientes, orcamentos.\n"
         "Registrar lead: lead: Nome, telefone, cidade origem/destino\n"
-        "Priorize leads novos -- responda em ate 2 horas!\n")
+        "Priorize leads novos -- responda em ate 2 horas!\n"
+        f"Contato da empresa: {COMPANY_EMAIL}\n")
 
     financeiro_ctx = (f"\nPERFIL: FINANCEIRO\n"
         f"{nome}: despesas, resumo mensal, relatorios, exportar para Drive.\n"
