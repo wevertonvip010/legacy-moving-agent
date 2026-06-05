@@ -1,149 +1,232 @@
 """
-webhooks/whatsapp.py v2
-Receptor de mensagens do WhatsApp via Evolution API.
-Suporta: texto, audio (transcrito), imagens (Vision), documentos.
+Webhook WhatsApp — Legacy Moving Agent
+
+Recebe eventos da Evolution API:
+- Mensagens de texto → encaminha ao agente
+- Mensagens com imagem → verifica se é avaria de funcionário
+- Atualização de status de mensagem
 """
+
 import os
 import logging
-import requests
 from flask import Blueprint, request, jsonify
-from agent.core import process_message
-from utils.audio import transcribe_audio
 
 logger = logging.getLogger(__name__)
 
-whatsapp_bp = Blueprint('whatsapp', __name__)
+whatsapp_bp = Blueprint("whatsapp", __name__, url_prefix="/webhook")
 
-EVOLUTION_API_URL = os.environ.get('EVOLUTION_API_URL', '')
-EVOLUTION_API_KEY = os.environ.get('EVOLUTION_API_KEY', '')
-EVOLUTION_INSTANCE = os.environ.get('EVOLUTION_INSTANCE', 'legacy-moving')
-NUMEROS_AUTORIZADOS = [n.strip() for n in os.environ.get('NUMEROS_AUTORIZADOS', '').split(',') if n.strip()]
+# Tipos de mídia de imagem aceitos
+IMAGE_MIMETYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
-@whatsapp_bp.route('/whatsapp', methods=['POST'])
-def receber_mensagem():
-          """Endpoint principal que recebe todos os eventos da Evolution API."""
-          try:
-                        payload = request.get_json(force=True) or {}
-                        event = payload.get('event', '')
+def _extrair_dados_mensagem(data: dict) -> dict:
+    """
+    Extrai os dados relevantes do payload da Evolution API.
 
-              if event not in ('messages.upsert', 'MESSAGES_UPSERT'):
-                                return jsonify({'ok': True, 'event': event, 'action': 'ignored'}), 200
-
-        data = payload.get('data', {})
-        msg_info = _extrair_mensagem(data)
-
-        if not msg_info or msg_info.get('from_me'):
-                          return jsonify({'ok': True, 'action': 'skipped'}), 200
-
-        phone = msg_info['phone']
-        msg_type = msg_info['type']
-        content = msg_info['content']
-        media_url = msg_info.get('media_url')
-
-        # Verificar autorizacao
-        if NUMEROS_AUTORIZADOS and phone not in NUMEROS_AUTORIZADOS:
-                          logger.warning(f'Numero nao autorizado: {phone}')
-                          _enviar_mensagem(phone, 'Acesso nao autorizado. Fale com o administrador.')
-                          return jsonify({'ok': False, 'error': 'unauthorized'}), 403
-
-        # Processar por tipo de mensagem
-        if msg_type == 'audio':
-                          logger.info(f'[{phone}] Transcrevendo audio...')
-                          content = transcribe_audio(media_url or content)
-                          if not content:
-                                                _enviar_mensagem(phone, 'Nao consegui entender o audio. Pode digitar?')
-                                                return jsonify({'ok': True}), 200
-                                            msg_type = 'text'
-
-elif msg_type == 'image':
-            # Imagem: passar direto para o core com a URL da midia
-            logger.info(f'[{phone}] Imagem recebida, processando com Vision...')
-            resposta = process_message(phone, content or 'foto enviada', 'image', media_url)
-            _enviar_mensagem(phone, resposta)
-            return jsonify({'ok': True}), 200
-
-elif msg_type == 'document':
-            _enviar_mensagem(phone, 'Documento recebido! Por enquanto aceito apenas fotos e mensagens de texto/audio. Em breve terei suporte a documentos.')
-            return jsonify({'ok': True}), 200
-
-        if not content or len(content.strip()) < 2:
-                          return jsonify({'ok': True, 'action': 'empty'}), 200
-
-        # Processar texto/audio transcrito
-        resposta = process_message(phone, content.strip(), msg_type)
-        _enviar_mensagem(phone, resposta)
-
-        return jsonify({'ok': True, 'phone': phone}), 200
-
-except Exception as e:
-        logger.error(f'Erro no webhook: {e}', exc_info=True)
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-
-def _extrair_mensagem(data: dict) -> dict | None:
-          """Extrai dados da mensagem do payload da Evolution API v2."""
+    Retorna dict com:
+        telefone, nome, texto, tipo_mensagem, message_id,
+        is_image, mimetype, caption, instancia
+    """
     try:
-                  key = data.get('key', {})
-        phone = key.get('remoteJid', '').replace('@s.whatsapp.net', '').replace('@g.us', '')
-        from_me = key.get('fromMe', False)
+        dados = data.get("data", {})
+        key = dados.get("key", {})
+        msg = dados.get("message", {})
+        push_name = dados.get("pushName", "Usuário")
+        instancia = data.get("instance", os.getenv("EVOLUTION_INSTANCE", "legacy"))
 
-        if not phone:
-                          return None
-
-        message = data.get('message', {})
+        telefone = key.get("remoteJid", "").replace("@s.whatsapp.net", "").replace("@g.us", "")
+        message_id = key.get("id", "")
+        from_me = key.get("fromMe", False)
 
         # Texto simples
-        if 'conversation' in message:
-                          return {'phone': phone, 'type': 'text', 'content': message['conversation'], 'from_me': from_me}
-
-        # Texto estendido
-        if 'extendedTextMessage' in message:
-                          return {'phone': phone, 'type': 'text', 'content': message['extendedTextMessage'].get('text', ''), 'from_me': from_me}
-
-        # Audio / PTT (mensagem de voz)
-        for audio_key in ('audioMessage', 'pttMessage'):
-                          if audio_key in message:
-                                                url = message[audio_key].get('url', '')
-                                                return {'phone': phone, 'type': 'audio', 'content': url, 'media_url': url, 'from_me': from_me}
+        texto = msg.get("conversation", "")
+        if not texto:
+            # Mensagem extendida (texto dentro de extendedTextMessage)
+            ext = msg.get("extendedTextMessage", {})
+            texto = ext.get("text", "")
 
         # Imagem
-        if 'imageMessage' in message:
-                          url = message['imageMessage'].get('url', '')
-            caption = message['imageMessage'].get('caption', '')
-            return {'phone': phone, 'type': 'image', 'content': caption, 'media_url': url, 'from_me': from_me}
+        img_msg = msg.get("imageMessage", {})
+        is_image = bool(img_msg)
+        mimetype = img_msg.get("mimetype", "")
+        caption = img_msg.get("caption", "")  # Legenda da foto
 
-        # Documento
-        if 'documentMessage' in message:
-                          url = message['documentMessage'].get('url', '')
-            filename = message['documentMessage'].get('fileName', 'documento')
-            return {'phone': phone, 'type': 'document', 'content': filename, 'media_url': url, 'from_me': from_me}
+        # Documento com imagem
+        if not is_image:
+            doc_msg = msg.get("documentMessage", {})
+            doc_mime = doc_msg.get("mimetype", "")
+            if doc_mime in IMAGE_MIMETYPES:
+                is_image = True
+                mimetype = doc_mime
+                caption = doc_msg.get("caption", "") or doc_msg.get("title", "")
 
-        return None
+        return {
+            "telefone": telefone,
+            "nome": push_name,
+            "texto": texto or caption,
+            "tipo_mensagem": "image" if is_image else "text",
+            "message_id": message_id,
+            "is_image": is_image,
+            "mimetype": mimetype,
+            "caption": caption,
+            "from_me": from_me,
+            "instancia": instancia,
+        }
+    except Exception as e:
+        logger.error("Erro ao extrair dados da mensagem: %s", e)
+        return {}
 
-except Exception as e:
-        logger.error(f'Erro ao extrair mensagem: {e}')
-        return None
+
+def _eh_mensagem_de_avaria(caption: str, texto: str) -> bool:
+    """
+    Heurística para detectar se uma imagem enviada por funcionário
+    é um registro de avaria.
+
+    Palavras-chave que indicam avaria: avaria, danificado, dano, arranhado,
+    quebrado, amassado, riscado, problema, defeito, OS, os-
+    """
+    palavras_avaria = [
+        "avaria", "avariado", "danificado", "dano", "arranhado", "arranhão",
+        "quebrado", "amassado", "riscado", "problema", "defeito",
+        "já veio", "ja veio", "já estava", "ja estava", "antes da mudança",
+        "antes da mudanca", "documentando", "registrando"
+    ]
+    texto_lower = (caption + " " + texto).lower()
+    return any(p in texto_lower for p in palavras_avaria)
 
 
-def _enviar_mensagem(phone: str, texto: str):
-          """Envia mensagem de texto via Evolution API."""
-    if not EVOLUTION_API_URL or not EVOLUTION_API_KEY:
-                  logger.info(f'[SIMULADO] Para {phone}: {texto[:150]}')
-        return
+def _processar_imagem_avaria(dados: dict) -> dict:
+    """
+    Processa uma imagem de avaria:
+    1. Verifica se o funcionário mencionou número de OS na legenda
+    2. Encaminha ao agente para completar o registro
 
-    url = f'{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}'
-    headers = {'apikey': EVOLUTION_API_KEY, 'Content-Type': 'application/json'}
-    payload = {'number': phone, 'text': texto}
+    Returns:
+        Dict com instrução para o agente processar
+    """
+    caption = dados.get("caption", "")
+    texto = dados.get("texto", "")
+    message_id = dados.get("message_id", "")
 
+    # Tentar extrair número de OS da legenda
+    import re
+    os_match = re.search(r"(?:os|o.s.|ordem)[\s\-\.#]*([\w\-]+)", caption + " " + texto,
+                         re.IGNORECASE)
+    numero_os = os_match.group(1) if os_match else ""
+
+    # Montar prompt para o agente processar como avaria
+    prompt_avaria = (
+        f"[SISTEMA: Funcionário enviou foto de item avariado]\n"
+        f"Legenda: {caption or '(sem legenda)'}\n"
+        f"ID da mensagem (para baixar foto): {message_id}\n"
+        f"OS detectada na legenda: {numero_os or 'não identificada'}\n\n"
+        "Por favor:\n"
+        "1. Se a OS foi identificada, use a ferramenta registrar_avaria imediatamente\n"
+        "2. Se não, pergunte o número da OS ao funcionário\n"
+        "3. Use o message_id informado para baixar a foto automaticamente\n"
+        "4. Confirme ao funcionário que a avaria foi registrada com sucesso"
+    )
+
+    return {
+        "tipo": "avaria",
+        "prompt": prompt_avaria,
+        "numero_os": numero_os,
+        "message_id": message_id,
+        "caption": caption
+    }
+
+
+@whatsapp_bp.route("/messages-upsert", methods=["POST"])
+def messages_upsert():
+    """Recebe novas mensagens WhatsApp da Evolution API."""
     try:
-                  resp = requests.post(url, json=payload, headers=headers, timeout=10)
-        resp.raise_for_status()
-        logger.info(f'[{phone}] Mensagem enviada')
-except Exception as e:
-        logger.error(f'[{phone}] Erro ao enviar: {e}')
+        data = request.get_json(force=True) or {}
+
+        # Ignorar mensagens de grupos (opcional — configurável)
+        ignore_groups = os.getenv("IGNORE_GROUPS", "true").lower() == "true"
+        if ignore_groups and "@g.us" in str(data.get("data", {}).get("key", {}).get("remoteJid", "")):
+            return jsonify({"status": "ignored", "reason": "group message"}), 200
+
+        dados = _extrair_dados_mensagem(data)
+        if not dados:
+            return jsonify({"status": "error", "reason": "invalid payload"}), 400
+
+        # Ignorar mensagens enviadas pelo próprio bot
+        if dados.get("from_me"):
+            return jsonify({"status": "ignored", "reason": "own message"}), 200
+
+        telefone = dados["telefone"]
+        nome = dados["nome"]
+        message_id = dados["message_id"]
+        instancia = dados["instancia"]
+
+        # ── Caso 1: Imagem enviada ──
+        if dados["is_image"]:
+            caption = dados.get("caption", "")
+            texto = dados.get("texto", "")
+
+            # Verificar se é registro de avaria
+            if _eh_mensagem_de_avaria(caption, texto):
+                info_avaria = _processar_imagem_avaria(dados)
+                texto_para_agente = info_avaria["prompt"]
+                logger.info("Avaria detectada de %s (OS: %s)", telefone, info_avaria.get("numero_os"))
+            else:
+                # Imagem sem contexto de avaria — tratar como texto com descrição
+                texto_para_agente = (
+                    f"[Funcionário enviou uma imagem]\n"
+                    f"Legenda: {caption or '(sem legenda)'}\n"
+                    f"ID da mensagem: {message_id}\n"
+                    "Se for uma avaria ou item danificado, me informe o número da OS e descreverei o problema."
+                )
+        else:
+            # ── Caso 2: Mensagem de texto ──
+            texto_para_agente = dados.get("texto", "").strip()
+
+        if not texto_para_agente:
+            return jsonify({"status": "ignored", "reason": "empty message"}), 200
+
+        # ── Processar com o agente ──
+        from agent.core import processar_mensagem
+        context = {
+            "telefone": telefone,
+            "nome": nome,
+            "message_id": message_id,
+            "instancia": instancia,
+            "tipo_mensagem": dados["tipo_mensagem"]
+        }
+        resposta = processar_mensagem(texto_para_agente, context)
+
+        # ── Enviar resposta via Evolution API ──
+        from integrations.evolution import EvolutionAPI
+        evolution = EvolutionAPI(instance=instancia)
+        evolution.send_text(telefone, resposta)
+
+        return jsonify({"status": "ok", "telefone": telefone}), 200
+
+    except Exception as e:
+        logger.error("Erro no webhook messages-upsert: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@whatsapp_bp.route('/whatsapp', methods=['GET'])
-def verificar_webhook():
-          return jsonify({'status': 'ok', 'webhook': 'legacy-moving-agent-v2'}), 200
+@whatsapp_bp.route("/messages-update", methods=["POST"])
+def messages_update():
+    """Recebe atualizações de status de mensagens (entregue, lido, etc.)."""
+    # Por ora apenas registra — pode ser usado para analytics futuros
+    data = request.get_json(force=True) or {}
+    logger.debug("Status atualizado: %s", data)
+    return jsonify({"status": "ok"}), 200
+
+
+@whatsapp_bp.route("/connection-update", methods=["POST"])
+def connection_update():
+    """Recebe atualizações de conexão da Evolution API."""
+    data = request.get_json(force=True) or {}
+    state = data.get("data", {}).get("state", "unknown")
+    logger.info("Estado da conexão WhatsApp: %s", state)
+    return jsonify({"status": "ok", "state": state}), 200
+
+
+@whatsapp_bp.route("/health", methods=["GET"])
+def health():
+    """Health check do webhook."""
+    return jsonify({"status": "ok", "module": "webhook/whatsapp"}), 200
