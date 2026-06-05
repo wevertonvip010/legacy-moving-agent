@@ -1,7 +1,8 @@
 """
 agent/notifications.py
-Motor de notificações automáticas da Legacy Moving
-Dispara lembretes, alertas e confirmações via WhatsApp
+Motor de notificacoes automaticas da Legacy Moving
+Dispara lembretes, alertas e confirmacoes via WhatsApp
+Empresa: Legacy Moving | Contato: legacymovingbr@gmail.com
 """
 
 import logging
@@ -13,6 +14,11 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 TIMEZONE = os.getenv("CALENDAR_TIMEZONE", "America/Sao_Paulo")
+# ── DADOS DA EMPRESA ─────────────────────────────────────────────────────
+COMPANY_NAME    = os.getenv("COMPANY_NAME", "Legacy Moving")
+COMPANY_EMAIL   = os.getenv("COMPANY_EMAIL", "legacymovingbr@gmail.com")
+COMPANY_WHATSAPP= os.getenv("COMPANY_WHATSAPP", "")
+COMPANY_TAGLINE = os.getenv("COMPANY_TAGLINE", "Legacy Moving — Cuidando do que e seu")
 
 
 def _tz() -> ZoneInfo:
@@ -61,7 +67,7 @@ def msg_lembrete_os(
         f"📅 *Data/Hora:* {data_hora}\n"
         f"📍 *Saída:* {origem}\n"
         f"🏁 *Destino:* {destino}\n\n"
-        f"_Responda *confirmar* para confirmar presença ou *problema* para avisar._"
+        ff"_Responda *confirmar* para confirmar presença ou *problema* para avisar._\n"\n        f"_Duvidas: {COMPANY_EMAIL}_"
     )
 
 
@@ -73,6 +79,7 @@ def msg_confirmacao_os_cliente(
     destino: str,
     motorista: str = "",
     contato_empresa: str = "",
+    email_empresa: str = "",
 ) -> str:
     """Confirmação enviada para o cliente antes da mudança."""
     linhas = [
@@ -88,9 +95,11 @@ def msg_confirmacao_os_cliente(
     if motorista:
         linhas.append(f"🚗 *Motorista:* {motorista}")
     if contato_empresa:
-        linhas.append(f"📞 *Dúvidas:* {contato_empresa}")
+        linhas.append(f"📞 *Duvidas:* {contato_empresa}")
+    if email_empresa or COMPANY_EMAIL:
+        linhas.append(f"📧 *E-mail:* {email_empresa or COMPANY_EMAIL}")
     linhas.append("")
-    linhas.append("_Legacy Moving — Cuidando do que é seu_")
+    linhas.append(f"_{COMPANY_TAGLINE}_")
     return "\n".join(linhas)
 
 
