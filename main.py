@@ -1,5 +1,5 @@
 """
-main.py — Legacy Moving Agent v5.0
+main.py — Legacy Moving Agent v5.2
 
 Ponto de entrada da aplicação Flask.
 Inicializa todas as integrações, registra blueprints e inicia o scheduler.
@@ -111,7 +111,7 @@ def index():
     """Rota raiz — informações básicas da API."""
     return jsonify({
         "app": "Legacy Moving Agent",
-        "version": "5.0.0",
+        "version": "5.2.0",
         "email": os.getenv("COMPANY_EMAIL", "legacymovingbr@gmail.com"),
         "status": "online",
         "timestamp": datetime.now().isoformat()
@@ -148,6 +148,14 @@ def status():
 # ── Inicialização ──
 
 with app.app_context():
+    # 0. Inicializar banco de dados (deve ser primeiro)
+    try:
+        from utils.database import init_db
+        init_db()
+        logger.info("✅ Banco de dados inicializado")
+    except Exception as e:
+        logger.error("❌ Erro ao inicializar banco: %s", e)
+
     init_integrations()
     register_blueprints()
     start_scheduler()
