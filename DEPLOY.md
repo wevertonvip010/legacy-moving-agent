@@ -1,5 +1,7 @@
 # 🚀 Guia de Deploy — Legacy Moving Agent
 
+**Email principal do projeto:** legacymovingbr@gmail.com
+
 Guia completo para colocar o agente em produção no Railway.
 
 ---
