@@ -33,7 +33,7 @@ ROLE_PERMISSIONS = {
                 'emoji': '👑',
                 'pode_ver': ['*'],  # tudo
                 'pode_fazer': ['*'],  # tudo
-                'saudacao': 'Ola, Admin! Estou pronto para ajudar com qualquer modulo do sistema.'
+                'saudacao': f'Ola, Admin da {COMPANY_NAME}! Estou pronto. Contato: {COMPANY_EMAIL}'
       },
       'supervisor': {
                 'label': 'Supervisor',
@@ -75,7 +75,7 @@ ROLE_PERMISSIONS = {
                 'emoji': '🔒',
                 'pode_ver': [],
                 'pode_fazer': [],
-                'saudacao': 'Seu numero nao esta cadastrado no sistema. Solicite acesso ao administrador.'
+                'saudacao': f'Seu numero nao esta cadastrado no sistema {COMPANY_NAME}. Solicite acesso ao administrador: {COMPANY_EMAIL}'
       }
 }
 
