@@ -42,7 +42,7 @@ def _get_service():
             creds_dict,
             scopes=["https://www.googleapis.com/auth/calendar"],
         )
-        _service = build("googleapiclient", "v3", credentials=creds, cache_discovery=False)
+        _service = build("calendar", "v3", credentials=creds, cache_discovery=False)
         logger.info("[GCal] Serviço inicializado com sucesso")
         return _service
 
