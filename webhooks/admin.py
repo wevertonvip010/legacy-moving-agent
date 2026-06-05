@@ -20,11 +20,18 @@ TIMEZONE = os.getenv("CALENDAR_TIMEZONE", "America/Sao_Paulo")
 
 
 def _autenticar(req) -> bool:
-    """Verifica o token de admin no header."""
+    """
+    Verifica o token de admin no header X-Admin-Token.
+    SEGURANÇA: sem AGENT_SECRET configurado, NENHUMA rota admin é acessível.
+    Configure AGENT_SECRET no .env antes de usar em produção.
+    """
     if not AGENT_SECRET:
-        return True  # Sem token configurado, permite (dev mode)
+        logger.error("[Admin] AGENT_SECRET não configurado — todas as rotas admin bloqueadas!")
+        return False  # Sem token = BLOQUEAR (nunca liberar em produção)
     token = req.headers.get("X-Admin-Token", "")
-    return token == AGENT_SECRET
+    # Comparação segura (evita timing attack)
+    import hmac
+    return hmac.compare_digest(token, AGENT_SECRET)
 
 
 def _erro_auth():
