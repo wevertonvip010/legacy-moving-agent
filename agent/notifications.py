@@ -67,7 +67,8 @@ def msg_lembrete_os(
         f"📅 *Data/Hora:* {data_hora}\n"
         f"📍 *Saída:* {origem}\n"
         f"🏁 *Destino:* {destino}\n\n"
-        ff"_Responda *confirmar* para confirmar presença ou *problema* para avisar._\n"\n        f"_Duvidas: {COMPANY_EMAIL}_"
+        f"_Responda *confirmar* para confirmar presença ou *problema* para avisar._\n\n"
+        f"_Dúvidas: {COMPANY_EMAIL}_"
     )
 
 
