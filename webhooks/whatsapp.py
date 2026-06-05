@@ -13,6 +13,23 @@ from flask import Blueprint, request, jsonify
 
 logger = logging.getLogger(__name__)
 
+# ── Segurança: validação de origem do webhook ──
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+
+
+def _validar_origem(req) -> bool:
+    """
+    Valida que o evento veio realmente da Evolution API.
+    Verifica o header 'x-webhook-secret' se WEBHOOK_SECRET estiver configurado.
+    Se WEBHOOK_SECRET não estiver configurado, aceita (compatibilidade retroativa com aviso).
+    """
+    if not WEBHOOK_SECRET:
+        logger.debug("WEBHOOK_SECRET não configurado — aceitando sem validação de origem")
+        return True
+    secret = req.headers.get("x-webhook-secret", "") or req.headers.get("X-Webhook-Secret", "")
+    import hmac
+    return hmac.compare_digest(secret, WEBHOOK_SECRET)
+
 whatsapp_bp = Blueprint("whatsapp", __name__, url_prefix="/webhook")
 
 # Tipos de mídia de imagem aceitos
@@ -155,6 +172,12 @@ def messages_upsert():
     """Recebe novas mensagens WhatsApp da Evolution API."""
     try:
         data = request.get_json(force=True) or {}
+
+        # Validar origem do webhook
+        if not _validar_origem(request):
+            logger.warning("Requisição rejeitada: WEBHOOK_SECRET inválido (IP: %s)",
+                           request.remote_addr)
+            return jsonify({"status": "unauthorized"}), 401
 
         # Ignorar mensagens de grupos (opcional — configurável)
         ignore_groups = os.getenv("IGNORE_GROUPS", "true").lower() == "true"
