@@ -37,7 +37,7 @@ def analisar_imagem(image_url: str, contexto: str = '') -> dict:
 
           # Chamar Claude Vision
                 response = client.messages.create(
-                    model='claude-opus-4-5',
+                    model=os.environ.get('VISION_MODEL', 'claude-haiku-4-5'),  # Haiku: custo baixo para visão
                     max_tokens=1024,
                     messages=[{
                         'role': 'user',
