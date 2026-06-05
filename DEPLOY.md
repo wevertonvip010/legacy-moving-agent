@@ -1,328 +1,222 @@
-# 🚀 Guia de Deploy — Legacy Moving Agent
-
-**Email principal do projeto:** legacymovingbr@gmail.com
-
-Guia completo para colocar o agente em produção no Railway.
+# DEPLOY — Legacy Moving Agent v5.2
+**Contato:** legacymovingbr@gmail.com
 
 ---
 
-## 📋 Pré-requisitos
+## PRÉ-REQUISITOS
 
-- [ ] Conta no [Railway](https://railway.app)
-- [ ] Conta no [GitHub](https://github.com) com o repositório `legacy-moving-agent`
-- [ ] Chave de API da [Anthropic](https://console.anthropic.com) (Claude)
-- [ ] JWT Token do sistema Legacy Moving (gerado no backend)
-- [ ] Chip de celular para WhatsApp (número dedicado)
+Antes de começar, tenha em mãos:
+- Conta no [Railway](https://railway.app) (deploy)
+- Conta Google com acesso ao Gmail `legacymovingbr@gmail.com`
+- Evolution API rodando (pode ser no Railway também)
+- Chave da API Anthropic: https://console.anthropic.com
+- Chave da API OpenAI (opcional, para áudio): https://platform.openai.com
 
 ---
 
-## Parte 1 — Deploy da Evolution API
+## PASSO 1 — Google Cloud: Service Account
 
-A Evolution API é o gateway que conecta seu servidor ao WhatsApp.
+> Uma Service Account é uma conta técnica que o agente usa para acessar Calendar e Drive sem expor sua senha.
 
-### 1.1 Criar serviço no Railway
+1. Acesse https://console.cloud.google.com
+2. Crie um projeto (ex: `legacy-moving-agent`)
+3. Menu lateral → **APIs e Serviços** → **Ativar APIs**
+   - Ativar `Google Calendar API`
+   - Ativar `Google Drive API`
+4. Menu lateral → **IAM e Admin** → **Contas de serviço**
+5. Clicar em **Criar conta de serviço**
+   - Nome: `legacy-moving-agent`
+   - Clicar em **Concluído**
+6. Clicar na conta criada → aba **Chaves** → **Adicionar chave** → **JSON**
+7. Salvar o arquivo `.json` baixado — você vai precisar do conteúdo completo
 
-1. Acesse [railway.app](https://railway.app) e faça login
-2. Clique em **New Project** → **Deploy from Docker Image**
-3. Cole a imagem: `atendai/evolution-api:latest`
-4. Clique em **Deploy**
+### 1a. Compartilhar o Google Calendar
 
-### 1.2 Configurar variáveis de ambiente da Evolution API
+1. Abrir Google Calendar com `legacymovingbr@gmail.com`
+2. Engrenagem → **Configurações** → clicar no calendário principal
+3. Seção **Compartilhar com pessoas específicas**
+4. Adicionar o e-mail da Service Account (termina em `@...iam.gserviceaccount.com`)
+5. Permissão: **Fazer alterações em eventos**
+6. Copiar o **ID do calendário** (em Integrar calendário): geralmente `legacymovingbr@gmail.com`
 
-No painel do serviço, vá em **Variables** e adicione:
+### 1b. Compartilhar o Google Drive
 
-| Variável | Valor |
-|---|---|
-| `AUTHENTICATION_TYPE` | `apikey` |
-| `AUTHENTICATION_API_KEY` | Crie uma chave forte (ex: `legacy-evo-2024-xkj`) |
-| `DATABASE_ENABLED` | `true` |
-| `DATABASE_PROVIDER` | `postgresql` |
-| `DATABASE_CONNECTION_URI` | URI do Postgres (veja 1.3) |
-| `QRCODE_LIMIT` | `30` |
-| `DEL_INSTANCE` | `false` |
-| `PORT` | `8080` |
+1. Abrir Google Drive com `legacymovingbr@gmail.com`
+2. Criar uma pasta chamada `Legacy Moving Agent`
+3. Clicar com botão direito → **Compartilhar**
+4. Adicionar o e-mail da Service Account → permissão **Editor**
+5. Copiar o **ID da pasta** (última parte da URL do Drive):
+   `https://drive.google.com/drive/folders/[ID-AQUI]`
 
-### 1.3 Adicionar banco de dados PostgreSQL
+---
 
-1. No mesmo projeto, clique em **+ New** → **Database** → **PostgreSQL**
-2. Aguarde criação do banco
-3. Copie a `DATABASE_URL` e cole como `DATABASE_CONNECTION_URI` na Evolution API
+## PASSO 2 — Deploy no Railway
 
-### 1.4 Gerar domínio público para a Evolution API
+1. Acesse https://railway.app → **New Project** → **Deploy from GitHub repo**
+2. Selecione o repositório `wevertonvip010/legacy-moving-agent`
+3. Railway detecta o `Procfile` automaticamente
+4. Vá em **Variables** e adicione **todas** as variáveis abaixo:
 
-1. No serviço Evolution API, vá em **Settings** → **Networking**
-2. Clique em **Generate Domain**
-3. Anote a URL gerada, ex: `https://evolution-api-production-xxxx.up.railway.app`
+### Variáveis obrigatórias
 
-### 1.5 Criar a instância WhatsApp
+```
+# Empresa
+COMPANY_NAME=Legacy Moving
+COMPANY_EMAIL=legacymovingbr@gmail.com
+COMPANY_WHATSAPP=5511999999999
+COMPANY_TAGLINE=Legacy Moving — Cuidando do que é seu
 
-Após o deploy (aguarde ~2 minutos), acesse via curl ou Insomnia:
+# Anthropic (IA principal)
+ANTHROPIC_API_KEY=sk-ant-api03-...    ← sua chave
+
+# ERP Legacy Moving
+LEGACY_API_URL=https://seu-erp.railway.app
+LEGACY_JWT_TOKEN=eyJhbGci...          ← token JWT admin do ERP
+
+# Evolution API (WhatsApp)
+EVOLUTION_API_URL=https://sua-evolution.railway.app
+EVOLUTION_API_KEY=sua-chave-evolution
+EVOLUTION_INSTANCE=legacy-moving
+
+# Segurança — OBRIGATÓRIO configurar antes de usar
+AGENT_SECRET=gere-uma-senha-forte-aqui    ← para proteger rotas /admin/*
+WEBHOOK_SECRET=outro-token-aleatorio-aqui ← configure igual na Evolution API
+
+# Google Calendar
+GOOGLE_CALENDAR_ID=legacymovingbr@gmail.com
+GOOGLE_CREDENTIALS_JSON={"type":"service_account",...}  ← JSON completo em UMA linha
+CALENDAR_TIMEZONE=America/Sao_Paulo
+
+# Google Drive
+DRIVE_ROOT_FOLDER_ID=1AbcDeFgHiJkLmNoP  ← ID da pasta "Legacy Moving Agent"
+
+# Banco de dados (SQLite padrão, suficiente para início)
+DATABASE_URL=sqlite:///agent_data.db
+
+# Modelos de IA
+CLAUDE_MODEL=claude-sonnet-4-5
+VISION_MODEL=claude-haiku-4-5
+```
+
+### Variáveis opcionais
+
+```
+# Áudio (Whisper) — necessário para mensagens de voz
+OPENAI_API_KEY=sk-...    ← sua chave OpenAI
+
+# Scheduler
+RESUMO_HORA=7
+RESUMO_MINUTO=0
+LEMBRETE_HORAS=24
+
+# Rate limiting
+RATE_MAX_CALLS=10
+RATE_WINDOW_SEC=60
+
+# Logs
+LOG_LEVEL=INFO
+PORT=5001
+```
+
+---
+
+## PASSO 3 — Configurar webhook na Evolution API
+
+Após o Railway gerar a URL do seu app (ex: `https://legacy-moving-agent-xxx.railway.app`):
+
+1. Acesse o painel da Evolution API
+2. Selecione a instância `legacy-moving`
+3. Configure o webhook:
+   - **URL:** `https://sua-url.railway.app/webhook/messages-upsert`
+   - **Header:** `x-webhook-secret: [valor do WEBHOOK_SECRET]`
+   - **Eventos:** `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `CONNECTION_UPDATE`
+4. Salvar e testar a conexão
+
+---
+
+## PASSO 4 — Cadastrar o primeiro admin
+
+Com o app rodando, cadastre seu número como administrador:
 
 ```bash
-curl -X POST https://SEU-DOMINIO-EVOLUTION/instance/create \
-  -H "apikey: SUA_API_KEY" \
+curl -X POST https://sua-url.railway.app/admin/usuarios \
   -H "Content-Type: application/json" \
-  -d '{"instanceName": "legacy-moving", "qrcode": true}'
+  -H "X-Admin-Token: [valor do AGENT_SECRET]" \
+  -d '{"phone":"5511999998888","nome":"Weverton","role":"admin"}'
 ```
 
-### 1.6 Conectar o WhatsApp (QR Code)
-
-```bash
-curl https://SEU-DOMINIO-EVOLUTION/instance/connect/legacy-moving \
-  -H "apikey: SUA_API_KEY"
-```
-
-A resposta retorna um QR Code em base64. Decodifique e escaneie com o celular dedicado.
-
-> ⚠️ **Use um chip exclusivo para o agente.** Nunca use seu WhatsApp pessoal.
+> Substitua o telefone pelo seu número com DDI+DDD (sem +, sem espaço).
 
 ---
 
-## Parte 2 — Deploy do Agente (este repositório)
+## PASSO 5 — Cadastrar a equipe
 
-### 2.1 Criar serviço no Railway
-
-1. No mesmo projeto Railway, clique em **+ New** → **GitHub Repo**
-2. Selecione `wevertonvip010/legacy-moving-agent`
-3. Railway detectará o `Procfile` e fará o build automaticamente
-
-### 2.2 Configurar variáveis de ambiente do agente
-
-No serviço do agente, vá em **Variables** e adicione:
-
-| Variável | Valor | Obrigatório |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | sk-ant-... | ✅ |
-| `LEGACY_API_URL` | URL do backend Legacy Moving | ✅ |
-| `LEGACY_JWT_TOKEN` | Token JWT do sistema | ✅ |
-| `EVOLUTION_API_URL` | URL da Evolution API (Parte 1) | ✅ |
-| `EVOLUTION_API_KEY` | Chave criada na Parte 1 | ✅ |
-| `EVOLUTION_INSTANCE` | `legacy-moving` | ✅ |
-| `AGENT_SECRET` | Senha para validar webhooks (crie uma forte) | ✅ |
-| `LOG_LEVEL` | `INFO` | ⬜ |
-| `LOG_FORMAT` | `json` (recomendado para Railway) | ⬜ |
-
-### 2.3 Gerar domínio público para o agente
-
-1. No serviço do agente, vá em **Settings** → **Networking**
-2. Clique em **Generate Domain**
-3. Anote a URL, ex: `https://legacy-moving-agent-production.up.railway.app`
-
-### 2.4 Configurar Webhook da Evolution API
-
-Agora que o agente tem uma URL pública, configure o webhook:
+Use o mesmo endpoint para cada funcionário:
 
 ```bash
-curl -X POST https://SEU-DOMINIO-EVOLUTION/webhook/set/legacy-moving \
-  -H "apikey: SUA_API_KEY" \
+# Cadastrar motorista
+curl -X POST https://sua-url.railway.app/admin/usuarios \
+  -H "X-Admin-Token: [AGENT_SECRET]" \
   -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://SEU-DOMINIO-AGENTE/webhook/whatsapp",
-    "webhook_by_events": false,
-    "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
-  }'
+  -d '{"phone":"5511888887777","nome":"Diego","role":"operacional"}'
+
+# Roles disponíveis:
+# admin | supervisor | motorista | operacional | comercial | financeiro
 ```
 
 ---
 
-## Parte 3 — Primeiro Teste
+## PASSO 6 — Verificar se está funcionando
 
-### 3.1 Verificar saúde do agente
-
+### Health check
 ```bash
-curl https://SEU-DOMINIO-AGENTE/health
+curl https://sua-url.railway.app/status
+# Deve retornar: {"status":"ok","version":"5.2.0","integrations":{...}}
 ```
 
-Resposta esperada:
-```json
-{"status": "ok", "agent": "Legacy Moving Agent", "version": "1.0.0"}
-```
+### Teste de mensagem
+1. Envie uma mensagem de WhatsApp para o número conectado na Evolution
+2. Espere a resposta do agente
+3. Verifique os logs no Railway (aba **Deployments** → **View Logs**)
 
-### 3.2 Verificar conexão com WhatsApp
-
-```bash
-curl https://SEU-DOMINIO-EVOLUTION/instance/connectionState/legacy-moving \
-  -H "apikey: SUA_API_KEY"
-```
-
-Resposta esperada:
-```json
-{"instance": {"instanceName": "legacy-moving", "state": "open"}}
-```
-
-### 3.3 Teste de mensagem
-
-1. Cadastre seu número como admin primeiro. Via API diretamente no banco de dados ou editando `agent/profiles.py` temporariamente
-2. Envie uma mensagem para o número do chip pelo WhatsApp
-3. O agente deve responder!
+### Teste de avaria
+1. Envie uma foto com legenda: `"sofá arranhado OS 042"`
+2. O agente deve responder confirmando o registro
+3. Verifique se a foto apareceu no Google Drive → pasta Avarias
 
 ---
 
-## Parte 4 — Administração
+## SOLUÇÃO DE PROBLEMAS
 
-### Cadastrar primeiro usuário (admin)
-
-Após o deploy, acesse o banco de dados do agente pelo Railway e insira:
-
-```sql
-INSERT INTO user_profiles (phone_number, name, role, active, created_at)
-VALUES ('5511999999999', 'Seu Nome', 'admin', true, NOW());
-```
-
-Ou via API administrativa (endpoint protegido):
-
-```bash
-curl -X POST https://SEU-DOMINIO-AGENTE/admin/users \
-  -H "Authorization: Bearer SEU_AGENT_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"phone": "5511999999999", "name": "Seu Nome", "role": "admin"}'
-```
-
-### Comandos via WhatsApp (apenas admin)
-
-Após estar cadastrado como admin, pelo próprio WhatsApp:
-
-- `cadastrar 5511988888888 Diego motorista` — cadastra novo usuário
-- `listar usuários` — vê todos os usuários
-- `remover 5511988888888` — remove usuário
-
----
-
-## Parte 5 — Monitoramento
-
-### Logs no Railway
-
-No painel do Railway, clique no serviço → **Logs** para ver os logs em tempo real.
-
-Filtros úteis:
-- `[MSG_IN]` — mensagens recebidas
-- `[MSG_OUT]` — mensagens enviadas  
-- `[TOOL]` — ferramentas chamadas
-- `[ERROR]` — erros
-
-### Redeploy automático
-
-O Railway redeploya automaticamente quando você faz push para o branch `main`.
-
----
-
-## 🆘 Solução de Problemas
-
-| Problema | Causa | Solução |
+| Sintoma | Causa provável | Solução |
 |---|---|---|
-| QR Code não aparece | Instance não criada | Verifique se a Evolution API está rodando e crie a instância |
-| WhatsApp desconecta | Sessão expirou | Reconecte via `/instance/connect/legacy-moving` |
-| Agente não responde | Webhook não configurado | Verifique a URL do webhook na Evolution API |
-| Erro 401 | JWT Token expirado | Gere um novo token no sistema Legacy Moving |
-| Timeout no Claude | Contexto muito longo | Reduza o histórico em `agent/memory.py` |
+| App não sobe | `ANTHROPIC_API_KEY` errada | Verificar chave no Railway |
+| Webhook retorna 401 | `WEBHOOK_SECRET` diferente | Igualar na Evolution e Railway |
+| Rotas /admin retornam 401 | `AGENT_SECRET` não configurado | Adicionar no Railway |
+| Fotos não vão pro Drive | `GOOGLE_CREDENTIALS_JSON` inválido | Verificar JSON em uma linha |
+| Calendar não cria eventos | SA não compartilhada no Calendar | Repetir passo 1a |
+| Áudio não transcrito | `OPENAI_API_KEY` ausente | Adicionar chave ou ignorar |
+| ERP indisponível | `LEGACY_API_URL` ou token errados | Verificar URL e token JWT |
 
 ---
 
-## 📦 Estrutura de Custos Estimada (Railway)
-
-| Serviço | Plano | Custo Estimado |
-|---|---|---|
-| Evolution API | Hobby | ~$5/mês |
-| PostgreSQL | Hobby | ~$5/mês |
-| Agente (este repo) | Hobby | ~$5/mês |
-| **Total** | | **~$15/mês** |
-
-> Os custos da API Anthropic (Claude) são separados e variam conforme o uso.
-> Estimativa: ~$10-30/mês para uso moderado com time de 10 pessoas.
-
----
-
-*Dúvidas? Abra uma issue no repositório.*
-
-
----
-
-## Fase 3 — Google Drive (opcional)
-
-### Criar Service Account
-
-1. Acesse [Google Cloud Console](https://console.cloud.google.com)
-2. Crie um projeto ou selecione um existente
-3. Ative a **Google Drive API**: APIs e Servicos > Biblioteca > "Google Drive API"
-4. Crie credenciais: APIs e Servicos > Credenciais > Criar credencial > Conta de Servico
-5. Baixe o JSON da conta de servico
-6. Compartilhe a pasta do Drive com o email da conta de servico (ex: agente@projeto.iam.gserviceaccount.com)
-
-### Variaveis Railway
-
-```
-DRIVE_ROOT_FOLDER_ID=1ABC...xyz    # ID da pasta raiz (copie da URL do Drive)
-GOOGLE_CREDENTIALS_JSON={"type":"service_account","project_id":"..."}
-```
-
-> O campo GOOGLE_CREDENTIALS_JSON deve ser o conteudo completo do arquivo JSON em uma unica linha.
-
----
-
-## Fase 4 — Contexto Individual de Usuario
-
-Nao requer configuracao externa. O contexto e armazenado em arquivo JSON local.
-
-### Variavel Railway
-
-```
-USER_CONTEXT_FILE=/tmp/user_contexts.json
-```
-
-> Atencao: /tmp/ e efemero no Railway. Para persistencia, use um volume ou banco de dados externo.
-
----
-
-## Rotas de Administracao (admin.py)
-
-Todas as rotas abaixo requerem o header `X-Admin-Token: <AGENT_SECRET>`.
-
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| GET | /admin/usuarios | Lista usuarios cadastrados |
-| POST | /admin/usuarios | Cadastra usuario |
-| PUT | /admin/usuarios/:phone | Atualiza usuario |
-| DELETE | /admin/usuarios/:phone | Remove usuario |
-| GET | /admin/contextos | Lista contextos de todos usuarios |
-| DELETE | /admin/contextos/:phone | Limpa contexto de usuario |
-| GET | /admin/analytics | Retorna analytics proativos |
-| POST | /admin/relatorio-proativo | Dispara relatorio agora |
-| GET | /admin/drive/arquivos | Lista arquivos no Drive |
-| POST | /admin/drive/upload | Upload de arquivo por URL |
-| POST | /admin/mensagem | Envia mensagem direta |
-| DELETE | /admin/memoria/:phone | Limpa historico de usuario |
-| DELETE | /admin/memoria | Limpa toda a memoria |
-| GET | /admin/jobs | Lista jobs agendados |
-| POST | /admin/jobs/resumo-diario | Dispara resumo diario agora |
-
-### Exemplo de uso (curl)
+## ATUALIZAR O SISTEMA
 
 ```bash
-# Cadastrar usuario
-curl -X POST https://seu-agente.railway.app/admin/usuarios \\
-  -H "X-Admin-Token: sua-senha-secreta" \\
-  -H "Content-Type: application/json" \\
-  -d '{"phone":"5511999998888","nome":"Joao","role":"motorista"}'
-
-# Disparar relatorio proativo
-curl -X POST https://seu-agente.railway.app/admin/relatorio-proativo \\
-  -H "X-Admin-Token: sua-senha-secreta"
-
-# Listar arquivos no Drive
-curl https://seu-agente.railway.app/admin/drive/arquivos \\
-  -H "X-Admin-Token: sua-senha-secreta"
+# Fazer push para main — Railway redeploya automaticamente
+git push origin main
 ```
+
+O banco SQLite é preservado entre deploys. Os dados de usuários e histórico não são perdidos.
 
 ---
 
-## Checklist Final v4.0
+## SEGURANÇA — CHECKLIST ANTES DE PRODUÇÃO
 
-- [ ] Evolution API rodando e conectada ao WhatsApp
-- [ ] Variaveis de ambiente configuradas no Railway
-- [ ] Webhook configurado na Evolution API
-- [ ] Primeiro usuario admin cadastrado
-- [ ] Google Calendar habilitado (opcional)
-- [ ] Google Drive habilitado (opcional, Fase 3)
-- [ ] Testar /health e /status
-- [ ] Enviar mensagem de teste pelo WhatsApp
-- [ ] Verificar relatorio diario as 7h
+- [ ] `AGENT_SECRET` configurado com senha forte (mín. 32 caracteres)
+- [ ] `WEBHOOK_SECRET` configurado e igual na Evolution API
+- [ ] `ANTHROPIC_API_KEY` e `LEGACY_JWT_TOKEN` armazenados só no Railway (nunca no código)
+- [ ] `GOOGLE_CREDENTIALS_JSON` armazenado só no Railway
+- [ ] Repositório GitHub configurado como **Private**
+- [ ] URL do Railway não compartilhada publicamente
+- [ ] Arquivo `.env` local no `.gitignore`
