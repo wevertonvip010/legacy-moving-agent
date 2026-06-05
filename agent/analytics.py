@@ -283,3 +283,33 @@ def gerar_relatorio_proativo(legacy_api) -> str:
         linhas.append("_Sem alertas criticos no momento._")
 
     return "\n".join(linhas)
+
+# ── Classe wrapper para compatibilidade com tools.py ──────────────────────────
+
+class AnalisesProativas:
+    """
+    Wrapper orientado a objeto para as funções de analytics.
+    Usado por agent/tools.py via: AnalisesProativas(legacy_api).gerar_relatorio_completo()
+    """
+
+    def __init__(self, legacy_api):
+        self.api = legacy_api
+
+    def gerar_relatorio_completo(self, periodo_dias: int = 30) -> dict:
+        """Gera relatório consolidado: financeiro + operacional + leads + estoque."""
+        return gerar_relatorio_proativo(self.api)
+
+    def analisar_financeiro(self) -> dict:
+        return analisar_financeiro(self.api)
+
+    def analisar_operacional(self) -> dict:
+        return analisar_operacional(self.api)
+
+    def analisar_leads(self) -> dict:
+        return analisar_leads(self.api)
+
+    def analisar_estoque(self) -> dict:
+        return analisar_estoque(self.api)
+
+    def gerar_texto_financeiro(self) -> str:
+        return gerar_insight_financeiro_texto(self.api)
