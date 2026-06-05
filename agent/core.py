@@ -301,36 +301,14 @@ def _registrar_avaria_via_vision(telefone: str, nome: str, descricao: str,
 # ────────────────────────────────────────────────
 
 def _transcrever_audio(media_url: str) -> str:
-    """Transcreve áudio usando OpenAI Whisper."""
-    import io
-    import requests as req
-    from openai import OpenAI
-
-    openai_key = os.getenv("OPENAI_API_KEY", "")
-    if not openai_key:
-        logger.warning("OPENAI_API_KEY não configurada — áudio não suportado")
-        return ""
-
-    evolution_key = os.getenv("EVOLUTION_API_KEY", "")
-    headers = {"apikey": evolution_key} if evolution_key else {}
-
+    """
+    Transcreve áudio usando OpenAI Whisper.
+    Delega para utils/audio.py para evitar duplicação de código.
+    """
     try:
-        # Baixar áudio
-        resp = req.get(media_url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        audio_bytes = resp.content
-
-        # Transcrever com Whisper
-        openai_client = OpenAI(api_key=openai_key)
-        audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = "audio.ogg"  # WhatsApp usa ogg/opus
-
-        transcription = openai_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="pt"
-        )
-        return transcription.text
+        from utils.audio import transcribe_audio
+        resultado = transcribe_audio(media_url)
+        return resultado or ""
     except Exception as e:
         logger.error("Erro ao transcrever áudio: %s", e)
         return ""
