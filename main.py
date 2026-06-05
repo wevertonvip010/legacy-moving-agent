@@ -1,112 +1,160 @@
+"""
+main.py — Legacy Moving Agent v5.0
+
+Ponto de entrada da aplicação Flask.
+Inicializa todas as integrações, registra blueprints e inicia o scheduler.
+
+Novidades v5.0:
+- Sistema de Avarias: DamageRegistry inicializado e disponível
+- Webhook WhatsApp com detecção automática de fotos de avaria
+"""
+
 import os
 import logging
-import atexit
 from flask import Flask, jsonify
-from flask_cors import CORS
-from dotenv import load_dotenv
+from datetime import datetime
 
-load_dotenv()
-
-from utils.logger import setup_logging
-setup_logging()
+# ── Configuração de logging ──
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 logger = logging.getLogger(__name__)
 
+# ── Criação do app Flask ──
 app = Flask(__name__)
-CORS(app, origins="*")
 
-# ── BLUEPRINTS ────────────────────────────────────────────────────────────────
 
-from webhooks.whatsapp import whatsapp_bp
-app.register_blueprint(whatsapp_bp, url_prefix="/webhook")
+def init_integrations():
+    """Inicializa todas as integrações externas."""
+    logger.info("Inicializando integrações...")
 
-from webhooks.admin import admin_bp
-app.register_blueprint(admin_bp)
+    # Google Drive
+    try:
+        from integrations.google_drive import GoogleDriveIntegration
+        from integrations import google_drive as gd_module
+        drive = GoogleDriveIntegration()
+        gd_module.google_drive = drive
+        logger.info("✅ Google Drive inicializado")
+    except Exception as e:
+        logger.warning("⚠️ Google Drive não disponível: %s", e)
+        drive = None
 
-# ── ROTAS DE STATUS ───────────────────────────────────────────────────────────
+    # Legacy API (ERP)
+    try:
+        from integrations.legacy_api import LegacyAPI
+        import integrations.legacy_api as la_module
+        api = LegacyAPI(
+            base_url=os.getenv("LEGACY_API_URL", ""),
+            api_key=os.getenv("LEGACY_API_KEY", "")
+        )
+        la_module.legacy_api = api
+        logger.info("✅ Legacy API (ERP) inicializada")
+    except Exception as e:
+        logger.warning("⚠️ Legacy API não disponível: %s", e)
+        api = None
 
-@app.route("/health", methods=["GET"])
-def health():
-    from integrations.evolution import is_connected
-    from utils.scheduler import list_jobs
-    connected = is_connected()
-    jobs = list_jobs()
+    # Google Calendar
+    try:
+        from integrations.google_calendar import GoogleCalendarIntegration
+        import integrations.google_calendar as gc_module
+        cal = GoogleCalendarIntegration()
+        gc_module.google_calendar = cal
+        logger.info("✅ Google Calendar inicializado")
+    except Exception as e:
+        logger.warning("⚠️ Google Calendar não disponível: %s", e)
+
+    # DamageRegistry — Sistema de Avarias
+    try:
+        from integrations.damage_registry import init_damage_registry
+        init_damage_registry(drive_integration=drive, legacy_api=api)
+        logger.info("✅ DamageRegistry (avarias) inicializado")
+    except Exception as e:
+        logger.warning("⚠️ DamageRegistry não disponível: %s", e)
+
+    logger.info("Integrações concluídas.")
+
+
+def register_blueprints():
+    """Registra todos os blueprints Flask."""
+    # Webhook WhatsApp
+    try:
+        from webhooks.whatsapp import whatsapp_bp
+        app.register_blueprint(whatsapp_bp)
+        logger.info("✅ Blueprint webhook/whatsapp registrado")
+    except Exception as e:
+        logger.error("❌ Erro ao registrar webhook/whatsapp: %s", e)
+
+    # Admin API
+    try:
+        from webhooks.admin import admin_bp
+        app.register_blueprint(admin_bp)
+        logger.info("✅ Blueprint admin registrado")
+    except Exception as e:
+        logger.error("❌ Erro ao registrar admin: %s", e)
+
+
+def start_scheduler():
+    """Inicia o scheduler de tarefas automáticas."""
+    try:
+        from utils.scheduler import iniciar_scheduler
+        iniciar_scheduler()
+        logger.info("✅ Scheduler iniciado")
+    except Exception as e:
+        logger.warning("⚠️ Scheduler não iniciado: %s", e)
+
+
+# ── Rotas principais ──
+
+@app.route("/", methods=["GET"])
+def index():
+    """Rota raiz — informações básicas da API."""
     return jsonify({
-        "status": "ok",
-        "service": "legacy-moving-agent",
-        "version": "4.0.0",
-        "whatsapp_connected": connected,
-        "scheduled_jobs": len(jobs),
-    }), 200
+        "app": "Legacy Moving Agent",
+        "version": "5.0.0",
+        "email": os.getenv("COMPANY_EMAIL", "legacymovingbr@gmail.com"),
+        "status": "online",
+        "timestamp": datetime.now().isoformat()
+    })
 
 
 @app.route("/status", methods=["GET"])
 def status():
-    """Status detalhado de todos os componentes do sistema."""
-    from integrations.evolution import get_instance_status, EVOLUTION_INSTANCE
-    from integrations.google_calendar import is_available as gcal_available
-    from integrations.google_drive import is_available as drive_available
-    from utils.scheduler import list_jobs
-    from integrations.legacy_api import LegacyAPI
-
-    api = LegacyAPI()
-    whatsapp_status = {}
-    try:
-        whatsapp_status = get_instance_status(EVOLUTION_INSTANCE)
-    except Exception as e:
-        whatsapp_status = {"erro": str(e)}
+    """Health check detalhado."""
+    from integrations import google_drive as gd_module
+    import integrations.legacy_api as la_module
+    from integrations.damage_registry import damage_registry
 
     return jsonify({
         "status": "ok",
-        "version": "4.0.0",
-        "fases": {
-            "fase1": "Estrutura base + ferramentas principais",
-            "fase2": "Notificacoes automaticas + Google Agenda",
-            "fase3": "Drive inteligente + Analytics proativos",
-            "fase4": "Multi-usuario com contexto individual",
+        "version": "5.0.0",
+        "timestamp": datetime.now().isoformat(),
+        "integrations": {
+            "google_drive": gd_module.google_drive is not None,
+            "legacy_api": la_module.legacy_api is not None,
+            "damage_registry": damage_registry is not None,
         },
-        "components": {
-            "whatsapp": whatsapp_status,
-            "erp_online": api.health_check(),
-            "google_calendar": gcal_available(),
-            "google_drive": drive_available(),
-            "scheduler_jobs": list_jobs(),
-        },
-    }), 200
+        "features": [
+            "OS e Google Agenda",
+            "Notificacoes WhatsApp",
+            "Google Drive",
+            "Analises Proativas",
+            "Multi-usuario",
+            "Registro de Avarias (Fase 5)"
+        ]
+    })
 
 
-@app.route("/admin/jobs", methods=["GET"])
-def list_scheduled_jobs():
-    """Lista todos os jobs agendados (compatibilidade com rota legada)."""
-    from utils.scheduler import list_jobs
-    return jsonify({"jobs": list_jobs()}), 200
+# ── Inicialização ──
 
-
-# ── INICIALIZACAO ─────────────────────────────────────────────────────────────
-
-def init_scheduler():
-    """Inicializa o scheduler de notificacoes automaticas."""
-    try:
-        from utils.scheduler import start_scheduler, stop_scheduler
-        from agent.profiles import ProfileManager
-        import integrations.evolution as evolution
-        from integrations.legacy_api import LegacyAPI
-
-        profiles = ProfileManager()
-        legacy_api = LegacyAPI()
-
-        started = start_scheduler(profiles, evolution, legacy_api)
-        if started:
-            logger.info("[Main] Scheduler iniciado com sucesso")
-            atexit.register(stop_scheduler)
-        else:
-            logger.warning("[Main] Scheduler nao disponivel")
-    except Exception as e:
-        logger.error(f"[Main] Erro ao inicializar scheduler: {e}")
+with app.app_context():
+    init_integrations()
+    register_blueprints()
+    start_scheduler()
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
-    logger.info(f"Legacy Moving Agent v4.0 rodando na porta {port}")
-    logger.info("Fases 1-4 implementadas")
-    init_scheduler()
-    app.run(host="0.0.0.0", port=port, debug=False)
+    port = int(os.getenv("PORT", 5000))
+    debug = os.getenv("DEBUG", "false").lower() == "true"
+    logger.info("Iniciando Legacy Moving Agent v5.0 na porta %d", port)
+    app.run(host="0.0.0.0", port=port, debug=debug)
