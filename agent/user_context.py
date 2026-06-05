@@ -1,14 +1,17 @@
 """
-agent/user_context.py
-Fase 4 -- Multi-usuario com contexto individual
-Cada usuario tem seu proprio contexto: preferencias, historico de acoes,
-estado da conversa, tema ativo e dados personalizados.
+agent/user_context.py — Legacy Moving Agent
+
+Fase 4 — Multi-usuário com contexto individual.
+Cada usuário tem seu próprio contexto: preferências, histórico de ações,
+estado da conversa, OS em foco, etc.
+
+Persistência: SQLite via utils/database.py (com fallback em arquivo JSON).
 """
 
 import os
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any
 from zoneinfo import ZoneInfo
@@ -17,256 +20,196 @@ logger = logging.getLogger(__name__)
 
 TIMEZONE = os.getenv("CALENDAR_TIMEZONE", "America/Sao_Paulo")
 CONTEXT_FILE = Path(os.environ.get("USER_CONTEXT_FILE", "/tmp/user_contexts.json"))
+MAX_ACOES = int(os.getenv("MAX_ACOES_HISTORICO", "50"))
 
 
-def _now() -> datetime:
-    return datetime.now(ZoneInfo(TIMEZONE))
+def _now() -> str:
+    return datetime.now(ZoneInfo(TIMEZONE)).isoformat()
 
 
-# Preferencias padrao por role
+# Preferências padrão por role
 DEFAULT_PREFERENCES = {
-    "admin": {
-        "resumo_diario": True,
-        "alertas_financeiros": True,
-        "alertas_operacionais": True,
-        "alertas_estoque": True,
-        "alertas_leads": True,
-        "modo_verboso": False,
-        "idioma": "pt-BR",
-    },
-    "supervisor": {
-        "resumo_diario": True,
-        "alertas_financeiros": False,
-        "alertas_operacionais": True,
-        "alertas_estoque": True,
-        "alertas_leads": False,
-        "modo_verboso": False,
-        "idioma": "pt-BR",
-    },
-    "motorista": {
-        "resumo_diario": False,
-        "alertas_financeiros": False,
-        "alertas_operacionais": True,
-        "alertas_estoque": False,
-        "alertas_leads": False,
-        "modo_verboso": False,
-        "idioma": "pt-BR",
-    },
-    "operacional": {
-        "resumo_diario": False,
-        "alertas_financeiros": False,
-        "alertas_operacionais": True,
-        "alertas_estoque": False,
-        "alertas_leads": False,
-        "modo_verboso": False,
-        "idioma": "pt-BR",
-    },
-    "comercial": {
-        "resumo_diario": False,
-        "alertas_financeiros": False,
-        "alertas_operacionais": False,
-        "alertas_estoque": False,
-        "alertas_leads": True,
-        "modo_verboso": False,
-        "idioma": "pt-BR",
-    },
-    "financeiro": {
-        "resumo_diario": True,
-        "alertas_financeiros": True,
-        "alertas_operacionais": False,
-        "alertas_estoque": False,
-        "alertas_leads": False,
-        "modo_verboso": False,
-        "idioma": "pt-BR",
-    },
+    "admin":      {"resumo_diario": True,  "alertas_financeiros": True,  "alertas_operacionais": True,  "alertas_estoque": True,  "alertas_leads": True,  "modo_verboso": False},
+    "supervisor": {"resumo_diario": True,  "alertas_financeiros": False, "alertas_operacionais": True,  "alertas_estoque": True,  "alertas_leads": False, "modo_verboso": False},
+    "motorista":  {"resumo_diario": False, "alertas_financeiros": False, "alertas_operacionais": True,  "alertas_estoque": False, "alertas_leads": False, "modo_verboso": False},
+    "operacional":{"resumo_diario": False, "alertas_financeiros": False, "alertas_operacionais": True,  "alertas_estoque": False, "alertas_leads": False, "modo_verboso": False},
+    "comercial":  {"resumo_diario": False, "alertas_financeiros": False, "alertas_operacionais": False, "alertas_estoque": False, "alertas_leads": True,  "modo_verboso": False},
+    "financeiro": {"resumo_diario": True,  "alertas_financeiros": True,  "alertas_operacionais": False, "alertas_estoque": False, "alertas_leads": False, "modo_verboso": False},
 }
 
 
 class UserContextManager:
     """
-    Gerencia o contexto individual de cada usuario.
-    Armazena preferencias, estado atual da conversa,
-    ultima acao, OS em foco, etc.
+    Gerencia o contexto individual de cada usuário.
+    Usa banco SQLite com fallback para arquivo JSON em /tmp.
     """
 
     def __init__(self):
-        self._contexts = self._load()
+        self._use_db = self._check_db()
+        if not self._use_db:
+            self._contexts = self._file_load()
+        else:
+            self._contexts = {}
 
-    def _load(self) -> dict:
+    def _check_db(self) -> bool:
+        try:
+            from utils.database import get_session, UserContextDB
+            with get_session() as s:
+                s.query(UserContextDB).first()
+            return True
+        except Exception as e:
+            logger.warning("[UserContext] Banco não disponível: %s", e)
+            return False
+
+    # ── CRUD ──
+
+    def _get_or_create(self, phone: str, role: str = "operacional") -> dict:
+        """Retorna ou cria o contexto de um usuário."""
+        ctx = self._backend_get(phone)
+        if ctx:
+            return ctx
+        prefs = DEFAULT_PREFERENCES.get(role, DEFAULT_PREFERENCES["operacional"]).copy()
+        ctx = {
+            "phone": phone,
+            "role": role,
+            "preferencias": prefs,
+            "estado": {"os_em_foco": None, "cliente_em_foco": None, "aguardando": None},
+            "historico_acoes": [],
+            "avaria_pendente": None,
+            "criado_em": _now(),
+        }
+        self._backend_save(phone, ctx)
+        return ctx
+
+    def _backend_get(self, phone: str) -> dict | None:
+        if self._use_db:
+            try:
+                from utils.database import get_session, UserContextDB
+                with get_session() as s:
+                    row = s.get(UserContextDB, phone)
+                    if row:
+                        return {
+                            "phone": row.phone,
+                            "role": row.role,
+                            "preferencias": json.loads(row.preferences_json or "{}"),
+                            "historico_acoes": json.loads(row.actions_json or "[]"),
+                        }
+                return None
+            except Exception as e:
+                logger.error("[UserContext] Erro DB get: %s", e)
+        return self._contexts.get(phone)
+
+    def _backend_save(self, phone: str, ctx: dict):
+        if self._use_db:
+            try:
+                from utils.database import get_session, UserContextDB
+                with get_session() as s:
+                    row = s.get(UserContextDB, phone)
+                    if row:
+                        row.role = ctx.get("role", "operacional")
+                        row.preferences_json = json.dumps(ctx.get("preferencias", {}), ensure_ascii=False)
+                        row.actions_json = json.dumps(ctx.get("historico_acoes", []), ensure_ascii=False)
+                    else:
+                        row = UserContextDB(
+                            phone=phone,
+                            role=ctx.get("role", "operacional"),
+                            preferences_json=json.dumps(ctx.get("preferencias", {}), ensure_ascii=False),
+                            actions_json=json.dumps(ctx.get("historico_acoes", []), ensure_ascii=False),
+                        )
+                        s.add(row)
+                    s.commit()
+                return
+            except Exception as e:
+                logger.error("[UserContext] Erro DB save: %s", e)
+        # fallback
+        self._contexts[phone] = ctx
+        self._file_save()
+
+    # ── API pública ──
+
+    def get_preferencias(self, phone: str) -> dict:
+        ctx = self._get_or_create(phone)
+        return ctx.get("preferencias", {})
+
+    def update_preferences(self, phone: str, updates: dict):
+        """Atualiza preferências ou qualquer campo livre do contexto."""
+        ctx = self._get_or_create(phone)
+        if "preferencias" not in ctx:
+            ctx["preferencias"] = {}
+        # Campos especiais (estado de avaria pendente, etc.) vão direto no ctx
+        for k, v in updates.items():
+            if k in ("avaria_pendente", "estado", "os_em_foco"):
+                ctx[k] = v
+            else:
+                ctx["preferencias"][k] = v
+        self._backend_save(phone, ctx)
+
+    def quer_notificacao(self, phone: str, tipo: str) -> bool:
+        prefs = self.get_preferencias(phone)
+        return prefs.get(f"alertas_{tipo}", False)
+
+    def registrar_acao(self, phone: str, acao: str, detalhes: dict = None):
+        """Registra uma ação no histórico do usuário."""
+        ctx = self._get_or_create(phone)
+        hist = ctx.get("historico_acoes", [])
+        hist.append({
+            "acao": acao,
+            "timestamp": _now(),
+            "detalhes": detalhes or {}
+        })
+        if len(hist) > MAX_ACOES:
+            hist = hist[-MAX_ACOES:]
+        ctx["historico_acoes"] = hist
+        self._backend_save(phone, ctx)
+
+    def get_ultima_acao(self, phone: str) -> dict | None:
+        ctx = self._backend_get(phone)
+        if not ctx:
+            return None
+        hist = ctx.get("historico_acoes", [])
+        return hist[-1] if hist else None
+
+    def get_contexto_para_prompt(self, phone: str, role: str = "") -> str:
+        """Retorna string com contexto do usuário para injetar no system prompt."""
+        ctx = self._backend_get(phone)
+        if not ctx:
+            return ""
+        prefs = ctx.get("preferencias", {})
+        ultima = self.get_ultima_acao(phone)
+        linhas = ["[CONTEXTO DO USUÁRIO]"]
+        if prefs.get("modo_verboso"):
+            linhas.append("- Prefere respostas detalhadas")
+        if ultima:
+            linhas.append(f"- Última ação: {ultima.get('acao')} em {ultima.get('timestamp', '')[:16]}")
+        # Avaria pendente aguardando número da OS
+        av_pend = ctx.get("avaria_pendente") or prefs.get("avaria_pendente")
+        if av_pend and av_pend.get("aguardando_os"):
+            linhas.append(f"- ⚠️ AVARIA PENDENTE: foto recebida, aguardando número da OS")
+            linhas.append(f"  message_id: {av_pend.get('message_id', '')}")
+            linhas.append(f"  item: {av_pend.get('descricao', '')}")
+            linhas.append("  Se o usuário informar um número de OS, registre a avaria imediatamente.")
+        return "\n".join(linhas) if len(linhas) > 1 else ""
+
+    def get_context(self, phone: str) -> dict:
+        return self._get_or_create(phone)
+
+    # ── Fallback arquivo ──
+
+    def _file_load(self) -> dict:
         if CONTEXT_FILE.exists():
             try:
                 return json.loads(CONTEXT_FILE.read_text())
             except Exception as e:
-                logger.error(f"[UserContext] Erro ao carregar: {e}")
+                logger.error("[UserContext] Erro arquivo load: %s", e)
         return {}
 
-    def _save(self):
+    def _file_save(self):
         try:
             CONTEXT_FILE.parent.mkdir(parents=True, exist_ok=True)
             CONTEXT_FILE.write_text(json.dumps(self._contexts, ensure_ascii=False, indent=2))
         except Exception as e:
-            logger.error(f"[UserContext] Erro ao salvar: {e}")
-
-    def _get_or_create(self, phone: str, role: str = "operacional") -> dict:
-        """Retorna ou cria o contexto de um usuario."""
-        if phone not in self._contexts:
-            prefs = DEFAULT_PREFERENCES.get(role, DEFAULT_PREFERENCES["operacional"]).copy()
-            self._contexts[phone] = {
-                "phone": phone,
-                "role": role,
-                "preferencias": prefs,
-                "estado": {
-                    "os_em_foco": None,        # OS que o usuario esta discutindo
-                    "cliente_em_foco": None,   # Cliente em foco
-                    "ultima_acao": None,        # Ultima ferramenta usada
-                    "aguardando": None,         # Esperando confirmacao de algo
-                },
-                "historico_acoes": [],  # ultimas 20 acoes realizadas
-                "criado_em": _now().isoformat(),
-                "atualizado_em": _now().isoformat(),
-            }
-            self._save()
-        return self._contexts[phone]
-
-    # --- Preferencias ---
-
-    def get_preferencias(self, phone: str, role: str = "operacional") -> dict:
-        """Retorna as preferencias do usuario."""
-        ctx = self._get_or_create(phone, role)
-        return ctx.get("preferencias", {})
-
-    def set_preferencia(self, phone: str, chave: str, valor: Any, role: str = "operacional") -> bool:
-        """Define uma preferencia do usuario."""
-        ctx = self._get_or_create(phone, role)
-        ctx["preferencias"][chave] = valor
-        ctx["atualizado_em"] = _now().isoformat()
-        self._save()
-        logger.info(f"[UserContext] {phone}: preferencia {chave}={valor}")
-        return True
-
-    def quer_notificacao(self, phone: str, tipo_alerta: str, role: str = "operacional") -> bool:
-        """Verifica se o usuario quer receber um tipo especifico de notificacao."""
-        prefs = self.get_preferencias(phone, role)
-        return prefs.get(tipo_alerta, False)
-
-    # --- Estado da conversa ---
-
-    def get_estado(self, phone: str, role: str = "operacional") -> dict:
-        """Retorna o estado atual da conversa do usuario."""
-        ctx = self._get_or_create(phone, role)
-        return ctx.get("estado", {})
-
-    def set_os_em_foco(self, phone: str, os_id: Optional[int], role: str = "operacional"):
-        """Define a OS que o usuario esta discutindo no momento."""
-        ctx = self._get_or_create(phone, role)
-        ctx["estado"]["os_em_foco"] = os_id
-        ctx["atualizado_em"] = _now().isoformat()
-        self._save()
-
-    def set_cliente_em_foco(self, phone: str, cliente: Optional[str], role: str = "operacional"):
-        """Define o cliente em foco na conversa."""
-        ctx = self._get_or_create(phone, role)
-        ctx["estado"]["cliente_em_foco"] = cliente
-        ctx["atualizado_em"] = _now().isoformat()
-        self._save()
-
-    def set_aguardando(self, phone: str, descricao: Optional[str], role: str = "operacional"):
-        """Marca que o agente esta aguardando confirmacao do usuario."""
-        ctx = self._get_or_create(phone, role)
-        ctx["estado"]["aguardando"] = descricao
-        ctx["atualizado_em"] = _now().isoformat()
-        self._save()
-
-    def limpar_estado(self, phone: str, role: str = "operacional"):
-        """Limpa o estado da conversa (apos conclusao ou timeout)."""
-        ctx = self._get_or_create(phone, role)
-        ctx["estado"] = {
-            "os_em_foco": None,
-            "cliente_em_foco": None,
-            "ultima_acao": None,
-            "aguardando": None,
-        }
-        ctx["atualizado_em"] = _now().isoformat()
-        self._save()
-
-    # --- Historico de acoes ---
-
-    def registrar_acao(self, phone: str, acao: str, detalhes: dict = None, role: str = "operacional"):
-        """Registra uma acao realizada pelo usuario (para contexto futuro)."""
-        ctx = self._get_or_create(phone, role)
-        historico = ctx.get("historico_acoes", [])
-
-        entrada = {
-            "acao": acao,
-            "detalhes": detalhes or {},
-            "ts": _now().isoformat(),
-        }
-        historico.append(entrada)
-
-        # Manter apenas as 20 ultimas acoes
-        ctx["historico_acoes"] = historico[-20:]
-        ctx["estado"]["ultima_acao"] = acao
-        ctx["atualizado_em"] = _now().isoformat()
-        self._save()
-
-    def get_historico_acoes(self, phone: str, limite: int = 10, role: str = "operacional") -> list:
-        """Retorna o historico de acoes do usuario."""
-        ctx = self._get_or_create(phone, role)
-        historico = ctx.get("historico_acoes", [])
-        return historico[-limite:]
-
-    def get_ultima_acao(self, phone: str, role: str = "operacional") -> Optional[str]:
-        """Retorna a ultima acao realizada pelo usuario."""
-        ctx = self._get_or_create(phone, role)
-        return ctx.get("estado", {}).get("ultima_acao")
-
-    # --- Contexto resumido para o prompt ---
-
-    def get_contexto_para_prompt(self, phone: str, role: str = "operacional") -> str:
-        """
-        Retorna um resumo do contexto do usuario para incluir no system prompt.
-        Ajuda o Claude a ter continuidade entre conversas.
-        """
-        ctx = self._get_or_create(phone, role)
-        estado = ctx.get("estado", {})
-        historico = ctx.get("historico_acoes", [])
-
-        partes = []
-
-        if estado.get("os_em_foco"):
-            partes.append(f"OS em foco: #{estado['os_em_foco']}")
-
-        if estado.get("cliente_em_foco"):
-            partes.append(f"Cliente em foco: {estado['cliente_em_foco']}")
-
-        if estado.get("aguardando"):
-            partes.append(f"Aguardando confirmacao: {estado['aguardando']}")
-
-        if historico:
-            ultimas = historico[-3:]
-            acoes_str = ", ".join(h["acao"] for h in ultimas)
-            partes.append(f"Ultimas acoes: {acoes_str}")
-
-        if not partes:
-            return ""
-
-        return "Contexto do usuario:\n" + "\n".join(f"- {p}" for p in partes)
-
-    # --- Listar todos os usuarios ---
-
-    def listar_usuarios_com_contexto(self) -> list:
-        """Lista todos os usuarios com seus contextos (para admin)."""
-        resultado = []
-        for phone, ctx in self._contexts.items():
-            resultado.append({
-                "phone": phone,
-                "role": ctx.get("role", "?"),
-                "ultima_acao": ctx.get("estado", {}).get("ultima_acao"),
-                "atualizado_em": ctx.get("atualizado_em", ""),
-                "total_acoes": len(ctx.get("historico_acoes", [])),
-            })
-        return resultado
+            logger.error("[UserContext] Erro arquivo save: %s", e)
 
 
-# Instancia global
+# Instância global
 user_context_manager = UserContextManager()
