@@ -3,6 +3,8 @@
 Agente WhatsApp com IA (Claude/Anthropic) integrado ao ERP Legacy Moving.
 Funciona como assessor operacional completo via WhatsApp.
 
+**Contato / Email principal:** legacymovingbr@gmail.com
+
 ## Funcionalidades
 
 - Controle operacional: consultar/criar OS, verificar mudancas, registrar avarias
@@ -22,8 +24,8 @@ Funciona como assessor operacional completo via WhatsApp.
 - Anthropic Claude 3.5 Sonnet (tool use)
 - Evolution API (WhatsApp self-hosted)
 - SQLite (historico de conversas)
-- Google Calendar API (sincronizacao de agenda)
-- Google Drive API (armazenamento inteligente de arquivos)
+- Google Calendar API (legacymovingbr@gmail.com)
+- Google Drive API (legacymovingbr@gmail.com)
 - APScheduler (jobs automaticos)
 - Deploy: Railway
 
@@ -85,3 +87,6 @@ Ver guia completo em `DEPLOY.md`.
 
 ---
 v4.0.0 — Todas as fases implementadas
+
+---
+📧 **legacymovingbr@gmail.com** — conta Google usada para Calendar e Drive
