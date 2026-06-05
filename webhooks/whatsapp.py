@@ -86,10 +86,24 @@ def _eh_mensagem_de_avaria(caption: str, texto: str) -> bool:
     quebrado, amassado, riscado, problema, defeito, OS, os-
     """
     palavras_avaria = [
-        "avaria", "avariado", "danificado", "dano", "arranhado", "arranhão",
-        "quebrado", "amassado", "riscado", "problema", "defeito",
-        "já veio", "ja veio", "já estava", "ja estava", "antes da mudança",
-        "antes da mudanca", "documentando", "registrando"
+        # avaria/dano (masculino e feminino)
+        "avaria", "avariado", "avariada",
+        "danificado", "danificada", "dano",
+        "arranhado", "arranhada", "arranhão",
+        "quebrado", "quebrada",
+        "amassado", "amassada",
+        "riscado", "riscada",
+        "destruído", "destruída",
+        # contexto de ocorrência
+        "problema", "defeito",
+        "já veio", "ja veio",
+        "já estava", "ja estava",
+        "antes da mudança", "antes da mudanca",
+        "documentando", "registrando",
+        # frases comuns de funcionários
+        "já tava assim", "ja tava assim",
+        "veio assim", "achei assim",
+        "pre-existente", "preexistente",
     ]
     texto_lower = (caption + " " + texto).lower()
     return any(p in texto_lower for p in palavras_avaria)
