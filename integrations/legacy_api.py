@@ -24,9 +24,10 @@ class LegacyAPI:
       LEGACY_JWT_TOKEN : Token JWT admin
     """
 
-    def __init__(self):
-        self.base_url = LEGACY_API_URL.rstrip("/")
-        self._token = LEGACY_JWT_TOKEN
+    def __init__(self, base_url: str = None, api_key: str = None):
+        # Aceita parâmetros opcionais; usa env vars como fallback
+        self.base_url = (base_url or LEGACY_API_URL).rstrip("/")
+        self._token = api_key or LEGACY_JWT_TOKEN
         self._session = requests.Session()
         self._session.headers.update({
             "Content-Type": "application/json",
@@ -290,3 +291,7 @@ class LegacyAPI:
     def obter_kpis(self, periodo: str = "mes") -> dict:
         """Retorna KPIs do negocio: NPS, taxa conversao, ocupacao equipe."""
         return self.get("/api/kpis", {"periodo": periodo})
+
+
+# Instância global — inicializada em main.py
+legacy_api: LegacyAPI = None
