@@ -210,6 +210,23 @@ class LegacyAPI:
         resultado = self.get("/api/equipe/disponibilidade", params)
         return resultado if isinstance(resultado, list) else resultado.get("items", [])
 
+    def listar_equipe(self, role: str = None, disponivel: bool = None,
+                      data: str = None) -> list:
+        """
+        Lista membros da equipe com filtros opcionais.
+        Alias flexível para listar_equipe_disponivel com suporte a role e disponivel.
+        
+        Args:
+            role: Cargo/função (ex: "motorista", "operacional")
+            disponivel: Se True, filtra apenas disponíveis
+            data: Data para verificar disponibilidade (padrão: hoje)
+        """
+        params = {}
+        if role: params["role"] = role
+        if disponivel is not None: params["disponivel"] = disponivel
+        if data: params["data"] = data
+        return self.get("/api/equipe", params)
+
     def obter_funcionario(self, funcionario_id: int) -> dict:
         return self.get(f"/api/funcionarios/{funcionario_id}")
 
