@@ -304,3 +304,65 @@ def formatar_arquivos_whatsapp(arquivos: list, titulo: str = "Arquivos") -> str:
         linhas.append(f"   \U0001F4CE {arq.get('url', 'sem link')}")
         linhas.append("")
     return "\n".join(linhas)
+
+
+# ─────────────────────────────────────────────────────────
+# CLASSE WRAPPER — compatibilidade com main.py e tools.py
+# ─────────────────────────────────────────────────────────
+
+class GoogleDriveIntegration:
+    """Wrapper OO sobre as funcoes de modulo do Google Drive."""
+
+    def is_available(self) -> bool:
+        return is_available()
+
+    def upload_file(self, nome: str, conteudo_bytes: bytes,
+                    categoria: str = "relatorios", numero_os: str = "",
+                    descricao: str = "", nome_cliente: str = "",
+                    funcionario_nome: str = "") -> dict:
+        """Alias upload_file -> upload_from_bytes (compatibilidade tools.py)."""
+        return upload_from_bytes(
+            nome=nome, conteudo=conteudo_bytes, categoria=categoria,
+            numero_os=numero_os, descricao=descricao,
+            nome_cliente=nome_cliente, funcionario_nome=funcionario_nome)
+
+    def upload_from_bytes(self, nome: str, conteudo: bytes,
+                          categoria: str = "relatorios", **kwargs) -> dict:
+        return upload_from_bytes(nome=nome, conteudo=conteudo,
+                                 categoria=categoria, **kwargs)
+
+    def search_files(self, query: str = "", numero_os: str = "",
+                     categoria: str = "") -> list:
+        """Alias search_files -> buscar_arquivos (compatibilidade tools.py)."""
+        return buscar_arquivos(query=query, numero_os=numero_os,
+                               categoria=categoria)
+
+    def buscar_arquivos(self, query: str = "", numero_os: str = "",
+                        categoria: str = "") -> list:
+        return buscar_arquivos(query=query, numero_os=numero_os,
+                               categoria=categoria)
+
+    def listar_arquivos_os(self, numero_os: str) -> list:
+        return listar_arquivos_os(numero_os=numero_os)
+
+    def listar_por_categoria(self, categoria: str, limite: int = 20) -> list:
+        return listar_por_categoria(categoria=categoria, limite=limite)
+
+    def obter_arquivo(self, file_id: str) -> dict:
+        return obter_arquivo(file_id=file_id)
+
+    def formatar_arquivos_whatsapp(self, arquivos: list,
+                                   titulo: str = "Arquivos") -> str:
+        return formatar_arquivos_whatsapp(arquivos=arquivos, titulo=titulo)
+
+
+# Singleton global — inicializado em main.py via init_google_drive()
+google_drive: "GoogleDriveIntegration" = None
+
+
+def init_google_drive() -> GoogleDriveIntegration:
+    """Inicializa a instancia global do GoogleDriveIntegration."""
+    global google_drive
+    google_drive = GoogleDriveIntegration()
+    logger.info("GoogleDriveIntegration inicializado.")
+    return google_drive
