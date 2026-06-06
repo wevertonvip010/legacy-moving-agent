@@ -327,3 +327,72 @@ def _format_datetime_br(iso_str: str) -> str:
 def is_available() -> bool:
     """Verifica se a integração com Google Calendar está configurada."""
     return bool(GOOGLE_CREDENTIALS_JSON and CALENDAR_ID)
+
+
+# ─────────────────────────────────────────────────────────
+# CLASSE WRAPPER — compatibilidade com main.py e tools.py
+# ─────────────────────────────────────────────────────────
+
+class GoogleCalendarIntegration:
+    """Wrapper OO sobre as funcoes de modulo do Google Calendar."""
+
+    def is_available(self) -> bool:
+        return is_available()
+
+    def criar_evento(self, titulo: str, inicio, fim=None,
+                     descricao: str = "", local: str = "",
+                     convidados=None, cor: str = "1",
+                     lembrete_minutos: int = 30, **kwargs) -> dict:
+        """Cria evento no calendario. kwargs ignorados para compatibilidade."""
+        from datetime import datetime as _dt
+        # Converter string ISO para datetime se necessario
+        if isinstance(inicio, str):
+            try:
+                inicio = _dt.fromisoformat(inicio.replace("Z", "+00:00"))
+            except Exception:
+                pass
+        if isinstance(fim, str) and fim:
+            try:
+                fim = _dt.fromisoformat(fim.replace("Z", "+00:00"))
+            except Exception:
+                fim = None
+        return criar_evento(
+            titulo=titulo, inicio=inicio, fim=fim,
+            descricao=descricao, local=local,
+            convidados=convidados, cor=cor,
+            lembrete_minutos=lembrete_minutos)
+
+    def listar_eventos(self, data_inicio=None, data_fim=None,
+                       max_results: int = 10) -> list:
+        return listar_eventos(data_inicio=data_inicio,
+                              data_fim=data_fim, max_results=max_results)
+
+    def listar_eventos_hoje(self) -> list:
+        return listar_eventos_hoje()
+
+    def listar_eventos_semana(self) -> list:
+        return listar_eventos_semana()
+
+    def buscar_evento(self, query: str) -> list:
+        return buscar_evento(query=query)
+
+    def criar_lembrete_mudanca(self, numero_os: str, cliente: str,
+                               data_hora, endereco: str = "") -> dict:
+        return criar_lembrete_mudanca(
+            numero_os=numero_os, cliente=cliente,
+            data_hora=data_hora, endereco=endereco)
+
+    def formatar_agenda_whatsapp(self, eventos: list) -> str:
+        return formatar_agenda_whatsapp(eventos=eventos)
+
+
+# Singleton global — inicializado em main.py via init_google_calendar()
+google_calendar: "GoogleCalendarIntegration" = None
+
+
+def init_google_calendar() -> GoogleCalendarIntegration:
+    """Inicializa a instancia global do GoogleCalendarIntegration."""
+    global google_calendar
+    google_calendar = GoogleCalendarIntegration()
+    logger.info("GoogleCalendarIntegration inicializado.")
+    return google_calendar
