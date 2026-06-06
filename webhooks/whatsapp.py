@@ -234,9 +234,8 @@ def messages_upsert():
         resposta = processar_mensagem(texto_para_agente, context)
 
         # ── Enviar resposta via Evolution API ──
-        from integrations.evolution import EvolutionAPI
-        evolution = EvolutionAPI(instance=instancia)
-        evolution.send_text(telefone, resposta)
+        import integrations.evolution as evo_module
+        evo_module.send_text(to=telefone, text=resposta, instance_name=instancia)
 
         return jsonify({"status": "ok", "telefone": telefone}), 200
 
