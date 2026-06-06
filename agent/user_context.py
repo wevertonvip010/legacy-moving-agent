@@ -213,3 +213,46 @@ class UserContextManager:
 
 # Instância global
 user_context_manager = UserContextManager()
+
+
+    def listar_usuarios_com_contexto(self) -> list:
+        """
+        Lista todos os usuários com seus contextos (preferências, última ação).
+        Usado pela rota GET /admin/contextos.
+        """
+        try:
+            with get_session() as session:
+                rows = session.query(UserContextDB).all()
+                return [
+                    {
+                        "telefone": r.phone,
+                        "preferencias": json.loads(r.preferences or "{}"),
+                        "ultima_acao": r.last_action,
+                        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                    }
+                    for r in rows
+                ]
+        except Exception as e:
+            logger.warning("[UCM] listar_usuarios_com_contexto fallback: %s", e)
+            return []
+
+    def limpar_estado(self, phone: str) -> None:
+        """
+        Remove o contexto de um usuário (preferências + histórico de ações).
+        Usado pela rota DELETE /admin/contextos/<phone>.
+        """
+        try:
+            with get_session() as session:
+                session.query(UserContextDB).filter_by(phone=phone).delete()
+                session.commit()
+            logger.info("[UCM] Estado de %s limpo com sucesso", phone)
+        except Exception as e:
+            logger.warning("[UCM] limpar_estado fallback: %s", e)
+            # Fallback: tenta remover do arquivo
+            try:
+                data = self._file_load()
+                if phone in data:
+                    del data[phone]
+                    self._file_save(data)
+            except Exception:
+                pass
