@@ -264,4 +264,22 @@ class ProfileManager:
 
 
 # Instância global
+
+    def get_numbers_by_roles(self, roles: list) -> list:
+        """
+        Retorna lista de números de telefone de usuarios com os cargos especificados.
+        Usado por dispatch_notification para determinar destinatários.
+        
+        Args:
+            roles: Lista de cargos (ex: ["admin", "supervisor"])
+        Returns:
+            Lista de números de telefone
+        """
+        todos = self.listar_usuarios()
+        return [
+            u["telefone"] for u in todos
+            if u.get("role") in roles and u.get("telefone")
+        ]
+
+
 profile_manager = ProfileManager()
