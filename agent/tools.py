@@ -229,7 +229,7 @@ def executar_ferramenta(tool_name: str, tool_input: dict, context: dict = None) 
             numero = tool_input.get("numero_os", "")
             cliente = tool_input.get("nome_cliente", "")
             if numero:
-                return legacy_api.obter_os(numero)
+                return legacy_api.obter_ordem_servico(numero)
             elif cliente:
                 return legacy_api.buscar_os_por_cliente(cliente)
             return {"erro": "Informe numero_os ou nome_cliente"}
@@ -238,17 +238,19 @@ def executar_ferramenta(tool_name: str, tool_input: dict, context: dict = None) 
             if not legacy_api:
                 return {"erro": "ERP não disponível"}
             data = tool_input.get("data", datetime.now().strftime("%d/%m/%Y"))
-            return legacy_api.listar_os_do_dia(data)
+            return legacy_api.listar_ordens_servico(data=data)
 
         elif tool_name == "criar_evento_agenda":
             if not google_calendar:
                 return {"erro": "Google Calendar não disponível"}
+            os_num = tool_input.get("numero_os", "")
+            desc_base = tool_input.get("descricao", "")
+            descricao_full = f"OS {os_num} — {desc_base}" if os_num else desc_base
             return google_calendar.criar_evento(
                 titulo=tool_input.get("titulo", ""),
                 inicio=tool_input.get("data_hora_inicio", ""),
                 fim=tool_input.get("data_hora_fim", ""),
-                descricao=tool_input.get("descricao", ""),
-                numero_os=tool_input.get("numero_os", "")
+                descricao=descricao_full
             )
 
         # ── Drive ──
@@ -257,10 +259,9 @@ def executar_ferramenta(tool_name: str, tool_input: dict, context: dict = None) 
                 return {"erro": "Google Drive não disponível"}
             conteudo_bytes = tool_input.get("conteudo", "").encode("utf-8")
             return google_drive.upload_file(
-                file_content=conteudo_bytes,
-                filename=tool_input.get("nome_arquivo", "arquivo.txt"),
-                folder_path=tool_input.get("pasta", "Documentos"),
-                mimetype="text/plain"
+                nome=tool_input.get("nome_arquivo", "arquivo.txt"),
+                conteudo_bytes=conteudo_bytes,
+                categoria=tool_input.get("pasta", "relatorios")
             )
 
         elif tool_name == "drive_buscar_arquivos":
@@ -324,13 +325,10 @@ def executar_ferramenta(tool_name: str, tool_input: dict, context: dict = None) 
 
         # ── Notificações ──
         elif tool_name == "enviar_notificacao_cliente":
-            from agent.notifications import NotificationManager
-            from integrations.evolution import EvolutionAPI
-            evolution = EvolutionAPI()
-            nm = NotificationManager(evolution)
+            import integrations.evolution as evo_mod
             fone = tool_input.get("telefone_cliente", "")
             msg = tool_input.get("mensagem", "")
-            result = evolution.send_text(fone, msg)
+            result = evo_mod.send_text(to=fone, text=msg)
             return {"success": True, "resultado": result}
 
         else:
