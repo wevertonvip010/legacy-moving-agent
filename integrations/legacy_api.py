@@ -230,6 +230,22 @@ class LegacyAPI:
     def registrar_avaria(self, dados: dict) -> dict:
         return self.post("/api/avarias", dados)
 
+    def adicionar_observacao_os(self, numero_os: str, observacao: str,
+                                tipo: str = "GERAL") -> dict:
+        """
+        Adiciona uma observação a uma OS existente.
+        Usado pelo DamageRegistry para registrar avarias no ERP.
+        
+        Args:
+            numero_os: Número da Ordem de Serviço
+            observacao: Texto da observação
+            tipo: Tipo da observação (ex: "AVARIA", "GERAL")
+        """
+        return self.post(f"/api/ordens-servico/{numero_os}/observacoes", {
+            "texto": observacao,
+            "tipo": tipo,
+        })
+
     def listar_avarias(self, os_id: int = None, limite: int = 10) -> list:
         params = {"limite": limite}
         if os_id: params["os_id"] = os_id
