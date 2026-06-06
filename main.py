@@ -31,10 +31,8 @@ def init_integrations():
 
     # Google Drive
     try:
-        from integrations.google_drive import GoogleDriveIntegration
-        from integrations import google_drive as gd_module
-        drive = GoogleDriveIntegration()
-        gd_module.google_drive = drive
+        from integrations.google_drive import init_google_drive
+        drive = init_google_drive()
         logger.info("✅ Google Drive inicializado")
     except Exception as e:
         logger.warning("⚠️ Google Drive não disponível: %s", e)
