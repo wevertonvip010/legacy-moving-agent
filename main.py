@@ -54,10 +54,8 @@ def init_integrations():
 
     # Google Calendar
     try:
-        from integrations.google_calendar import GoogleCalendarIntegration
-        import integrations.google_calendar as gc_module
-        cal = GoogleCalendarIntegration()
-        gc_module.google_calendar = cal
+        from integrations.google_calendar import init_google_calendar
+        cal = init_google_calendar()
         logger.info("✅ Google Calendar inicializado")
     except Exception as e:
         logger.warning("⚠️ Google Calendar não disponível: %s", e)
@@ -95,8 +93,15 @@ def register_blueprints():
 def start_scheduler():
     """Inicia o scheduler de tarefas automáticas."""
     try:
-        from utils.scheduler import iniciar_scheduler
-        iniciar_scheduler()
+        from utils.scheduler import start_scheduler
+        import integrations.evolution as evolution_module
+        from agent.profiles import profile_manager
+        from integrations.legacy_api import legacy_api as _api
+        start_scheduler(
+            profiles_manager=profile_manager,
+            evolution_client=evolution_module,
+            legacy_api=_api
+        )
         logger.info("✅ Scheduler iniciado")
     except Exception as e:
         logger.warning("⚠️ Scheduler não iniciado: %s", e)
